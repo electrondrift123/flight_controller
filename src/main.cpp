@@ -14,6 +14,7 @@
 //// Mutexes for Serial & i2c
 SemaphoreHandle_t serialMutex;
 SemaphoreHandle_t wireMutex;
+SemaphoreHandle_t spiMutex;
 
 // create the instance of the sensors data
 mpu6050Data_t mpuData;
@@ -132,6 +133,11 @@ void setup() {
   wireMutex = xSemaphoreCreateMutex();
   if (wireMutex == NULL) {
     Serial.println("Failed to create Wire mutex!");
+    while (1); // halt or retry
+  }
+  spiMutex = xSemaphoreCreateMutex();
+  if (spiMutex == NULL){
+    Serial.println("Failed to create SPI mutex!");
     while (1); // halt or retry
   }
 
