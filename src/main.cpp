@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <STM32FreeRTOS.h>
-#include <LoRaLib.h>
+#include <RadioLib.h>
 
 // Custom Libraries
 #include "QMC5883P.h"
@@ -9,7 +9,7 @@
 #include "BMP280.h"
 #include "Madgwick.h"
 
-#define LED PC13
+#define PC13_PIN 13 // GPIOC pin 13
 
 //// Mutexes for Serial & i2c
 SemaphoreHandle_t serialMutex;
@@ -31,10 +31,15 @@ float eulerAngles[3]; // roll, pitch, yaw
 void blinkTask(void *pvParameters) {
   TickType_t interval = pdMS_TO_TICKS(1000); // 500 ms interval
   for(;;){
-    digitalWrite(LED, HIGH); // Turn LED on
-    vTaskDelay(interval); // Wait for 500 ms
-    digitalWrite(LED, LOW); // Turn LED off
-    vTaskDelay(interval); // Wait for another 500 ms
+    // digitalWrite(LED, HIGH); // Turn LED on
+    // vTaskDelay(interval); // Wait for 500 ms
+    // digitalWrite(LED, LOW); // Turn LED off
+    // vTaskDelay(interval); // Wait for another 500 ms
+
+    GPIOC->BSRR = (1 << (PC13_PIN)); // LED ON
+    vTaskDelay(interval);
+    GPIOC->BSRR = (1 << (PC13_PIN + 16)); // LED OFF
+    vTaskDelay(interval);
   }
 }
 
@@ -92,6 +97,12 @@ void MadgwickTask(void *Parameters) {
   }
 }
 
+void PC13_Buzzer_Config(void){
+  RCC->AHB1ENR |= (1 << 2); // enable GPIOC clock
+  GPIOC->MODER &= ~(3 << (PC13_PIN * 2)); // clear the setup bits (reset state)
+  GPIOC->MODER |= (1 << (PC13_PIN * 2)); // set it as output [01]:[14:13]
+}
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -121,8 +132,11 @@ void setup() {
   }
   Serial.println("QMC5883P initialized successfully!");
 
-  pinMode(LED, OUTPUT);
-  digitalWrite(LED, HIGH); // turn led off
+  // PIN config
+  // pinMode(LED, OUTPUT);
+  // digitalWrite(LED, HIGH); // turn led off
+  PC13_Buzzer_Config(); // set as digital OUTPUT
+  GPIOC->BSRR = (1 << (PC13_PIN + 16)); // HIGH = OFF LED
 
   // Mutexes
   serialMutex = xSemaphoreCreateMutex();
