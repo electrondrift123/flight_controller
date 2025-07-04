@@ -1,6 +1,8 @@
 #include "tasks_config.h"
 
 #include <STM32FreeRTOS.h>
+#include <RF24.h>
+#include <RadioLib.h>
 
 #include "QMC5883P.h"
 #include "MPU6050.h"
@@ -41,8 +43,6 @@ void MadgwickTask(void* Parameters) {
 
       if (sensorsReady()) {
         if (xSemaphoreTake(wireMutex, portMAX_DELAY)) {
-          QMC5883P_read(&magData);
-          MPU6050_read(&mpuData);
 
           MadgwickFilterUpdate(&madData,
             mpuData.wx, mpuData.wy, mpuData.wz,
@@ -80,14 +80,13 @@ void PIDtask(void* Parameters){
   TickType_t interval = pdMS_TO_TICKS(50); // 200 Hz
   float roll, pitch, yaw; // local variables for Euler Angles
 
-  if (xSemaphoreTake(wireMutex, portMAX_DELAY)){
-    roll = eulerAngles[0];
-    pitch = eulerAngles[1];
-    yaw = eulerAngles[2];
-    xSemaphoreGive(wireMutex); // release the mutex
-  }
-
   for (;;){
+    if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)){
+      roll = eulerAngles[0];
+      pitch = eulerAngles[1];
+      yaw = eulerAngles[2];
+      xSemaphoreGive(eulerAnglesMutex); // release the mutex
+    }
     // DO the PID here:
 
     vTaskDelay(interval);
