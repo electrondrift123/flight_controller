@@ -16,6 +16,6 @@ extern bmp280Data_t  bmpData;
 extern MadgwickData_t madData;
 
 // Euler angles output from filter
-extern float eulerAngles[3];
+extern volatile float eulerAngles[3];
 
 #endif // SHARED_DATA_H

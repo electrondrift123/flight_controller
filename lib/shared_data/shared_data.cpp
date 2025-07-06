@@ -6,4 +6,4 @@ magData_t     magData;
 bmp280Data_t  bmpData;
 MadgwickData_t madData;
 
-float eulerAngles[3] = {0.0f, 0.0f, 0.0f};
+volatile float eulerAngles[3] = {0.0f, 0.0f, 0.0f};
