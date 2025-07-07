@@ -6,6 +6,7 @@
 
 // Custom Libraries
 #include "pin_config.h"
+#include "buzzer.h"
 #include "tasks_config.h"
 #include "sync.h"
 #include "sensors.h"
@@ -20,6 +21,7 @@ void setup() {
   Wire.setClock(400000); // Set I2C clock to 400 kHz
   delay(250);
 
+  buzzer_init(); // Initialize the buzzer
   sensors_init(); // the sensors initialization 
   used_gpio_init(); // Initialize GPIOs
   mutexes_init(); // Initialize mutexes
@@ -33,3 +35,6 @@ void loop() {
   vTaskDelay(pdMS_TO_TICKS(5000)); // Delay for 5000 ms
 }
 
+
+//// TODO:
+// 1. PID library

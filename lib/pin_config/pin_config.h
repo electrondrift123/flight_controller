@@ -1,9 +1,22 @@
 #ifndef PIN_CONFIG_H
 #define PIN_CONFIG_H
 
+// SPI default pins
+#define SPI_SCK_PIN       5   // PA5
+#define SPI_MISO_PIN      6   // PA6
+#define SPI_MOSI_PIN      7   // PA7
+
+// SX1278 pins
+
+// nRF24 pins
+
+// ===== LED PIN ======
+#define BUILTIN_LED_PORT GPIOC
+#define BUILTIN_LED_PIN  13
+
 // ===== BUZZER (PC13) =====
-#define BUZZER_PORT       GPIOC
-#define BUZZER_PIN        13
+#define BUZZER_PORT       GPIOB
+#define BUZZER_PIN        12
 
 // ===== MOTORS (PA0–PA3) =====
 #define MOTOR_PWM_PORT    GPIOA

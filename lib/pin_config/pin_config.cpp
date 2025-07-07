@@ -11,11 +11,10 @@ void Buzzer_Init(void){
 }
 
 void MotorPWM_TIM2_Init(void) {
-  /*** 1. Enable Clocks ***/
+  // Enable Clocks 
   RCC->AHB1ENR |= (1 << 0);     // Enable GPIOA clock
   RCC->APB1ENR |= (1 << 0);     // Enable TIM2 clock
 
-  /*** 2. Configure GPIOA Pins PA0–PA3 to Alternate Function Mode ***/
   // Set MODER[0–3] = 10 (AF)
   GPIOA->MODER &= ~((3 << (0 * 2)) | (3 << (1 * 2)) | (3 << (2 * 2)) | (3 << (3 * 2)));
   GPIOA->MODER |=  ((2 << (0 * 2)) | (2 << (1 * 2)) | (2 << (2 * 2)) | (2 << (3 * 2)));
@@ -24,7 +23,7 @@ void MotorPWM_TIM2_Init(void) {
   GPIOA->AFR[0] &= ~((0xF << (0 * 4)) | (0xF << (1 * 4)) | (0xF << (2 * 4)) | (0xF << (3 * 4)));
   GPIOA->AFR[0] |=  ((1 << (0 * 4)) | (1 << (1 * 4)) | (1 << (2 * 4)) | (1 << (3 * 4)));
 
-  /*** 3. Configure TIM2 for PWM ***/
+  // Configure TIM2 for PWM
   TIM2->PSC = 83;          // Prescaler: 84MHz / (83 + 1) = 1 MHz
   TIM2->ARR = 19999;       // ARR: 1 MHz / 50 Hz = 20000 → 20ms period
 

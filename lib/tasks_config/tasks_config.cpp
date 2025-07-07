@@ -10,16 +10,25 @@
 #include "Madgwick.h"
 
 #include "pin_config.h"
+#include "buzzer.h"
 #include "shared_data.h"
 #include "sync.h"
 
+void buzz_it(uint16_t num, uint16_t delay_time = 500) {
+  for (uint16_t i = 0; i < num; i++) {
+    buzzer_on(); // Buzzer ON
+    vTaskDelay(pdMS_TO_TICKS(delay_time)); // Use FreeRTOS delay
+    buzzer_off(); // Buzzer OFF
+    vTaskDelay(pdMS_TO_TICKS(delay_time));
+  }
+}
 
 void blinkTask(void *pvParameters) {
   TickType_t interval = pdMS_TO_TICKS(1000); // 500 ms interval
   for(;;){
-    GPIOC->BSRR = (1 << (BUZZER_PIN)); // LED ON
+    GPIOC->BSRR = (1 << (BUILTIN_LED_PIN)); // LED ON
     vTaskDelay(interval);
-    GPIOC->BSRR = (1 << (BUZZER_PIN + 16)); // LED OFF
+    GPIOC->BSRR = (1 << (BUILTIN_LED_PIN + 16)); // LED OFF
     vTaskDelay(interval);
   }
 }
