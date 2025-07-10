@@ -16,10 +16,13 @@ extern magData_t     magData;
 extern bmp280Data_t  bmpData;
 extern MadgwickData_t madData;
 
+// Angle Mode 
 extern PIDControllerData_t pidRoll;
 extern PIDControllerData_t pidPitch;
 extern PIDControllerData_t pidYaw;
 extern PIDControllerData_t pidThrottle; // for altitude hold
+
+//// TODO: rate Mode to be added
 
 // Euler angles output from filter
 extern volatile float eulerAngles[3];

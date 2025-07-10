@@ -94,6 +94,7 @@ void MadgwickTask(void* Parameters) {
   }
 }
 
+// Angle Modet
 void PIDtask(void* Parameters){
   TickType_t lastWakeTime = xTaskGetTickCount();
   TickType_t previousTime = lastWakeTime; // Initialize previous time
@@ -138,6 +139,9 @@ void PIDtask(void* Parameters){
     
     // Failsafe & Limit motor outputs to the range [1000, 2000]:
     if (throttle < 1050.0f) {
+      resetPID(&pidRoll);
+      resetPID(&pidPitch);
+      resetPID(&pidYaw);
       motor1_output = motor2_output = motor3_output = motor4_output = 1000.0f;
     } else {
       motor1_output = constrainFloat(motor1_output, 1000.0f, 2000.0f);
@@ -145,7 +149,6 @@ void PIDtask(void* Parameters){
       motor3_output = constrainFloat(motor3_output, 1000.0f, 2000.0f);
       motor4_output = constrainFloat(motor4_output, 1000.0f, 2000.0f);
     }
-
 
     // Motor Output:
     TIM2->CCR1 = motor1_output; // TIM2_CH1
@@ -184,7 +187,24 @@ void kalmanTask(void* Parameters){
   }
 }
 
+void batteryMonitorTask(void* Parameters){
+  TickType_t interval = pdMS_TO_TICKS(4000);
+  float batteryVoltage; // Variable to hold battery voltage
 
+  for (;;){
+    // Read battery voltage
+
+    // Update shared data
+    if (xSemaphoreTake(loraMutex, portMAX_DELAY)) {
+      loraList[5] = batteryVoltage; // Update battery voltage in loraList
+      xSemaphoreGive(loraMutex);
+    }
+    
+    vTaskDelay(interval);
+  }
+}
+
+////////// freeRTOS INIT
 void freeRTOS_tasks_init(void){
   xTaskCreate(
     blinkTask,           // Task function
@@ -235,6 +255,15 @@ void freeRTOS_tasks_init(void){
   xTaskCreate(
     loraTXtask,
     "LoRa TX Task",
+    128,
+    NULL,
+    1,
+    NULL
+  );
+
+  xTaskCreate(
+    batteryMonitorTask,
+    "Battery Monitor Task",
     128,
     NULL,
     1,
