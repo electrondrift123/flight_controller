@@ -11,6 +11,9 @@ extern SemaphoreHandle_t wireMutex;
 extern SemaphoreHandle_t spiMutex;
 extern SemaphoreHandle_t eulerAnglesMutex;
 
+extern SemaphoreHandle_t nRF24Mutex;
+extern SemaphoreHandle_t loraMutex;
+
 // Function to initialize all mutexes
 void mutexes_init(void);
 

@@ -7,6 +7,9 @@ SemaphoreHandle_t wireMutex;
 SemaphoreHandle_t spiMutex;
 SemaphoreHandle_t eulerAnglesMutex;
 
+SemaphoreHandle_t nRF24Mutex;
+SemaphoreHandle_t loraMutex;
+
 void mutexes_init(void){
   serialMutex = xSemaphoreCreateMutex();
   if (serialMutex == NULL) {
@@ -21,6 +24,17 @@ void mutexes_init(void){
   spiMutex = xSemaphoreCreateMutex();
   if (spiMutex == NULL){
     Serial.println("Failed to create SPI mutex!");
+    while (1); // halt or retry
+  }
+
+  nRF24Mutex = xSemaphoreCreateMutex();
+  if (nRF24Mutex == NULL) {
+    Serial.println("Failed to create nRF24 mutex!");
+    while (1); // halt or retry
+  }
+  loraMutex = xSemaphoreCreateMutex();
+  if (loraMutex == NULL) {
+    Serial.println("Failed to create LoRa mutex!");
     while (1); // halt or retry
   }
 

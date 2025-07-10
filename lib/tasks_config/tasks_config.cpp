@@ -14,11 +14,13 @@
 #include "shared_data.h"
 #include "sync.h"
 
+#include "PID.h"
+
 void buzz_it(uint16_t num, uint16_t delay_time = 500) {
   for (uint16_t i = 0; i < num; i++) {
-    buzzer_on(); // Buzzer ON
+    buzz_on(); // Buzzer ON
     vTaskDelay(pdMS_TO_TICKS(delay_time)); // Use FreeRTOS delay
-    buzzer_off(); // Buzzer OFF
+    buzz_off(); // Buzzer OFF
     vTaskDelay(pdMS_TO_TICKS(delay_time));
   }
 }
@@ -86,19 +88,28 @@ void MadgwickTask(void* Parameters) {
 }
 
 void PIDtask(void* Parameters){
+  TickType_t lastWakeTime = xTaskGetTickCount();
   TickType_t interval = pdMS_TO_TICKS(50); // 200 Hz
   float roll, pitch, yaw; // local variables for Euler Angles
+  float dt = 0.005f;
 
   for (;;){
+    // read sensors:
     if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)){
       roll = eulerAngles[0];
       pitch = eulerAngles[1];
       yaw = eulerAngles[2];
       xSemaphoreGive(eulerAnglesMutex); // release the mutex
     }
-    // DO the PID here:
+    // read user input from nRF24L01 (use mutex):
 
-    vTaskDelay(interval);
+    // PID start:
+
+    // Motor Mixer Algorithm:
+    
+    // Motor Output:
+
+    vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
 }
 

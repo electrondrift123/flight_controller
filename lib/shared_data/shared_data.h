@@ -8,12 +8,18 @@
 #include "MPU6050.h"
 #include "BMP280.h"
 #include "Madgwick.h"
+#include "PID.h"
 
 // Global shared sensor data
 extern mpu6050Data_t mpuData;
 extern magData_t     magData;
 extern bmp280Data_t  bmpData;
 extern MadgwickData_t madData;
+
+extern PIDControllerData_t pidRoll;
+extern PIDControllerData_t pidPitch;
+extern PIDControllerData_t pidYaw;
+extern PIDControllerData_t pidThrottle; // for altitude hold
 
 // Euler angles output from filter
 extern volatile float eulerAngles[3];

@@ -6,4 +6,9 @@ magData_t     magData;
 bmp280Data_t  bmpData;
 MadgwickData_t madData;
 
+PIDControllerData_t pidRoll;
+PIDControllerData_t pidPitch;
+PIDControllerData_t pidYaw;
+PIDControllerData_t pidThrottle; // for altitude hold
+
 volatile float eulerAngles[3] = {0.0f, 0.0f, 0.0f};

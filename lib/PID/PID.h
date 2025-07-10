@@ -4,16 +4,26 @@
 #include <Arduino.h>
 
 typedef struct {
-    float Kp;  // Proportional gain
-    float Ki;  // Integral gain
-    float Kd;  // Derivative gain
-    float setpoint;  // Desired value
-    float integral;  // Integral term
-    float last_error;  // Last error value
-    unsigned long last_time;  // Last time the PID was updated
+    float kp;
+    float ki;
+    float kd;
+
+    float integral;
+    float prev_error;
+
+    float output_max_limit;
+    float output_min_limit;
+    float integral_limit;
+
+    float setpoint;
 } PIDControllerData_t;
 
-void PIDController_Init(PIDControllerData_t *pid, float Kp, float Ki, float Kd, float setpoint);
-void PIDCompute(PIDControllerData_t *pid, float current_value, float *output);
+void initPID(PIDControllerData_t* pid, float kp, float ki, float kd,
+             float output_min_limit, float output_max_limit,
+             float integral_limit);
 
-#endif
+float computePID(PIDControllerData_t* pid, float setpoint, float actual, float dt);
+
+void resetPID(PIDControllerData_t* pid);
+
+#endif // PID_H

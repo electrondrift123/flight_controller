@@ -11,6 +11,7 @@
 #include "sync.h"
 #include "sensors.h"
 // #include "shared_data.h"
+#include "PID.h"
 
 void setup() {
   // put your setup code here, to run once:
@@ -26,6 +27,12 @@ void setup() {
   used_gpio_init(); // Initialize GPIOs
   mutexes_init(); // Initialize mutexes
  
+  // === PID CONTROLLER INITIALIZATION ===
+  initPID(&pidRoll,  1.0f, 0.0f, 0.0f, -500.0f, 500.0f, 100.0f);
+  initPID(&pidPitch, 1.0f, 0.0f, 0.0f, -500.0f, 500.0f, 100.0f);
+  initPID(&pidYaw,   1.0f, 0.0f, 0.0f, -500.0f, 500.0f, 100.0f);
+
+
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
   vTaskStartScheduler();
 }
