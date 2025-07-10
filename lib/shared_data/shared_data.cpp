@@ -12,3 +12,6 @@ PIDControllerData_t pidYaw;
 PIDControllerData_t pidThrottle; // for altitude hold
 
 volatile float eulerAngles[3] = {0.0f, 0.0f, 0.0f};
+
+volatile float inputList[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+volatile float loraList[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};

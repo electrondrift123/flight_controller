@@ -25,6 +25,13 @@ void buzz_it(uint16_t num, uint16_t delay_time = 500) {
   }
 }
 
+static inline float constrainFloat(float val, float minVal, float maxVal) {
+    if (val < minVal) return minVal;
+    if (val > maxVal) return maxVal;
+    return val;
+}
+
+
 void blinkTask(void *pvParameters) {
   TickType_t interval = pdMS_TO_TICKS(1000); // 500 ms interval
   for(;;){
@@ -89,11 +96,18 @@ void MadgwickTask(void* Parameters) {
 
 void PIDtask(void* Parameters){
   TickType_t lastWakeTime = xTaskGetTickCount();
+  TickType_t previousTime = lastWakeTime; // Initialize previous time
   TickType_t interval = pdMS_TO_TICKS(50); // 200 Hz
+
   float roll, pitch, yaw; // local variables for Euler Angles
-  float dt = 0.005f;
+  float throttle, rollInput, pitchInput, yawInput; // user inputs
 
   for (;;){
+    TickType_t currentTime = xTaskGetTickCount();
+    float dt = (currentTime - previousTime) * portTICK_PERIOD_MS / 1000.0f;
+    if (dt <= 0.0f || dt > 0.05f) dt = 0.005f; // clamp dt to a safe range
+    previousTime = currentTime;
+
     // read sensors:
     if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)){
       roll = eulerAngles[0];
@@ -102,12 +116,42 @@ void PIDtask(void* Parameters){
       xSemaphoreGive(eulerAnglesMutex); // release the mutex
     }
     // read user input from nRF24L01 (use mutex):
+    if (xSemaphoreTake(nRF24Mutex, portMAX_DELAY)){
+      // read user input here
+      throttle = inputList[0]; // Throttle
+      rollInput = inputList[1]; // Roll input
+      pitchInput = inputList[2]; // Pitch input
+      yawInput = inputList[3]; // Yaw input
+      xSemaphoreGive(nRF24Mutex); // release the mutex
+    }
 
     // PID start:
+    float roll_correction = computePID(&pidRoll, rollInput, roll, dt);
+    float pitch_correction = computePID(&pidPitch, pitchInput, pitch, dt);
+    float yaw_correction = computePID(&pidYaw, yawInput, yaw, dt);
 
-    // Motor Mixer Algorithm:
+    // Motor Mixer Algorithm (Props-out), (not yet tested):
+    float motor1_output = throttle + roll_correction + pitch_correction + yaw_correction; // Front Left
+    float motor2_output = throttle - roll_correction + pitch_correction - yaw_correction; // Front Right
+    float motor3_output = throttle + roll_correction - pitch_correction - yaw_correction; // Back Left
+    float motor4_output = throttle - roll_correction - pitch_correction + yaw_correction; // Back Right
     
+    // Failsafe & Limit motor outputs to the range [1000, 2000]:
+    if (throttle < 1050.0f) {
+      motor1_output = motor2_output = motor3_output = motor4_output = 1000.0f;
+    } else {
+      motor1_output = constrainFloat(motor1_output, 1000.0f, 2000.0f);
+      motor2_output = constrainFloat(motor2_output, 1000.0f, 2000.0f);
+      motor3_output = constrainFloat(motor3_output, 1000.0f, 2000.0f);
+      motor4_output = constrainFloat(motor4_output, 1000.0f, 2000.0f);
+    }
+
+
     // Motor Output:
+    TIM2->CCR1 = motor1_output; // TIM2_CH1
+    TIM2->CCR2 = motor2_output; // TIM2_CH2
+    TIM2->CCR3 = motor3_output; // TIM2_CH3
+    TIM2->CCR4 = motor4_output; // TIM2_CH4
 
     vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
@@ -182,7 +226,7 @@ void freeRTOS_tasks_init(void){
   xTaskCreate(
     RXtask,
     "nRF24 RX task",
-    64,
+    128,
     NULL,
     1,
     NULL
@@ -191,7 +235,7 @@ void freeRTOS_tasks_init(void){
   xTaskCreate(
     loraTXtask,
     "LoRa TX Task",
-    64,
+    128,
     NULL,
     1,
     NULL

@@ -24,4 +24,7 @@ extern PIDControllerData_t pidThrottle; // for altitude hold
 // Euler angles output from filter
 extern volatile float eulerAngles[3];
 
+extern volatile float inputList[8]; // [T, R, P, Y, RTL, EL, Kill, ALT_H]
+extern volatile float loraList[6]; //[Lat, lon, alt, heading, distance, batt]
+
 #endif // SHARED_DATA_H
