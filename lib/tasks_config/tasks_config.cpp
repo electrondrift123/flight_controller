@@ -31,6 +31,14 @@ static inline float constrainFloat(float val, float minVal, float maxVal) {
     return val;
 }
 
+void disableMotors(void) {
+  TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 0;
+  TIM2->CCER &= ~(TIM_CCER_CC1E | TIM_CCER_CC2E | TIM_CCER_CC3E | TIM_CCER_CC4E);
+}
+
+void enableMotors(void) {
+  TIM2->CCER |= (TIM_CCER_CC1E | TIM_CCER_CC2E | TIM_CCER_CC3E | TIM_CCER_CC4E);
+}
 
 void blinkTask(void *pvParameters) {
   TickType_t interval = pdMS_TO_TICKS(1000); // 500 ms interval
@@ -118,16 +126,6 @@ void readSensorsTask(void* Parameters) {
   }
 }
 
-void disableMotors() {
-  TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 0;
-  TIM2->CCER &= ~(TIM_CCER_CC1E | TIM_CCER_CC2E | TIM_CCER_CC3E | TIM_CCER_CC4E);
-}
-
-void enableMotors() {
-  TIM2->CCER |= (TIM_CCER_CC1E | TIM_CCER_CC2E | TIM_CCER_CC3E | TIM_CCER_CC4E);
-}
-
-
 // Angle Mode
 void PIDtask(void* Parameters){
   TickType_t lastWakeTime = xTaskGetTickCount();
@@ -139,6 +137,8 @@ void PIDtask(void* Parameters){
   float throttle, rollInput, pitchInput, yawInput; // user inputs
 
   static bool motorsEnabled = true;
+  static bool altitudeLockSet = false;
+
 
   // EMA filter variables & constants
   static float throttleFiltered = 0.0f;
@@ -235,9 +235,16 @@ void PIDtask(void* Parameters){
     // ====== ALTITUDE HOLD ======
     if (ALT_H) {
       //// TODO: implement altitude hold logic & use PID on throttle
-      throttleFiltered = computePID(&pidThrottle, throttle, altitude, dt);
+      static float targetAltitude = 0.0f;
+
+      if (!altitudeLockSet) {
+        targetAltitude = altitude;  // lock on current altitude
+        altitudeLockSet = true;
+      }
+      throttleFiltered = computePID(&pidThrottle, targetAltitude, altitude, dt);
     }else{
       // to remove the CONFLICT between EMA & PID
+      altitudeLockSet = false;
       throttleFiltered = alpha * throttle  + (1 - alpha) * throttleFiltered;
     }
 
@@ -277,10 +284,20 @@ void PIDtask(void* Parameters){
     TIM2->CCR3 = motor3_output; // TIM2_CH3
     TIM2->CCR4 = motor4_output; // TIM2_CH4
 
+    // Debugging output: Temporary -> uncomment it in deployment!
+    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+      Serial.print("M1: "); Serial.print(motor1_output); Serial.print(" | ");
+      Serial.print("M2: "); Serial.print(motor2_output); Serial.print(" | ");
+      Serial.print("M3: "); Serial.print(motor3_output); Serial.print(" | ");
+      Serial.print("M4: "); Serial.println(motor4_output);
+      xSemaphoreGive(serialMutex);
+    }
+
     vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
 }
 
+//// TODO: implement
 void RXtask(void* Parameters){
   TickType_t interval = pdMS_TO_TICKS(1000);
 
@@ -290,6 +307,7 @@ void RXtask(void* Parameters){
   }
 }
 
+//// TODO: implement
 void loraTXtask(void* Parameters){
   TickType_t interval = pdMS_TO_TICKS(1000);
 
@@ -299,8 +317,10 @@ void loraTXtask(void* Parameters){
   }
 }
 
+//// TODO: find ADC pin for this task
 void batteryMonitorTask(void* Parameters){
   TickType_t interval = pdMS_TO_TICKS(4000);
+  // TickType_t lastWakeTime = x
   float batteryVoltage; // Variable to hold battery voltage
 
   for (;;){
