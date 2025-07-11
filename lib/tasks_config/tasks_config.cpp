@@ -234,9 +234,7 @@ void PIDtask(void* Parameters){
 
     // ====== ALTITUDE HOLD ======
     if (ALT_H) {
-      //// TODO: implement altitude hold logic & use PID on throttle
       static float targetAltitude = 0.0f;
-
       if (!altitudeLockSet) {
         targetAltitude = altitude;  // lock on current altitude
         altitudeLockSet = true;
