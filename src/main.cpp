@@ -14,7 +14,6 @@
 #include "PID.h"
 
 void setup() {
-  // put your setup code here, to run once:
   Serial.begin(115200);
   while (!Serial);
 
@@ -28,20 +27,22 @@ void setup() {
   mutexes_init(); // Initialize mutexes
  
   // === PID CONTROLLER INITIALIZATION ===
+  // angle mode ======  NOT YET TUNED & TESTED!
   initPID(&pidRoll,  1.0f, 0.0f, 0.0f, -500.0f, 500.0f, 100.0f);
   initPID(&pidPitch, 1.0f, 0.0f, 0.0f, -500.0f, 500.0f, 100.0f);
   initPID(&pidYaw,   1.0f, 0.0f, 0.0f, -500.0f, 500.0f, 100.0f);
-
+  initPID(&pidThrottle,   1.0f, 0.0f, 0.0f, -500.0f, 500.0f, 100.0f);
 
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
   vTaskStartScheduler();
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
   vTaskDelay(pdMS_TO_TICKS(5000)); // Delay for 5000 ms
 }
 
 
 //// TODO:
-// 1. PID library
+// 1. lora task
+// 2. main radio task
+// 3. more failsafes

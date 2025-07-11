@@ -11,6 +11,14 @@ int16_t dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
 
 int32_t t_fine;
 
+// smoothens the altitude reading: X = (1 - alpha) * X + alpha * X_prev, (LPF: EMA)
+float alpha = 0.9f;
+float smoothedAltitude = 0.0f;
+
+void updateAltitude(float rawAltitude) {
+  smoothedAltitude = (1 - alpha) * rawAltitude + alpha * smoothedAltitude;
+}
+
 bool i2c_available(uint8_t reg, uint8_t len) {
   Wire.beginTransmission(BMP280_ADDRESS);
   Wire.write(reg);
@@ -147,7 +155,10 @@ bool BMP280_read(bmp280Data_t *data) {
   float altitude = calculateAltitude(pressure_);
   float relative = altitude - baseAltitude;
 
-  data->altitude = relative;
+  updateAltitude(relative); // Update smoothed altitude
+
+  // data->altitude = relative;
+  data->altitude = smoothedAltitude; // Use smoothed altitude
   data->pressure = pressure_;
   data->temperature = temp;
 

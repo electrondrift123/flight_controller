@@ -94,14 +94,65 @@ void MadgwickTask(void* Parameters) {
   }
 }
 
-// Angle Modet
+// BMP280 sensor reading task
+void readSensorsTask(void* Parameters) {
+  const TickType_t intervalTicks = pdMS_TO_TICKS(10);  // 10ms ≈ 100Hz
+  TickType_t lastWakeTime = xTaskGetTickCount();
+
+  float local_altitude;
+
+  for (;;) {
+    // read the BMP280 sensor
+    if (xSemaphoreTake(wireMutex, portMAX_DELAY)){
+      // read BMP280 sensor: Altitude
+      BMP280_read(&bmpData);
+      local_altitude = bmpData.altitude; // Store altitude locally
+      xSemaphoreGive(wireMutex);
+    }
+    // Update shared data: BMP280 altitude
+    if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
+      loraList[2] = local_altitude; // Update altitude in loraList
+      xSemaphoreGive(loraMutex);
+    }
+    vTaskDelayUntil(&lastWakeTime, intervalTicks); // a slight delay
+  }
+}
+
+void disableMotors() {
+  TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 0;
+  TIM2->CCER &= ~(TIM_CCER_CC1E | TIM_CCER_CC2E | TIM_CCER_CC3E | TIM_CCER_CC4E);
+}
+
+void enableMotors() {
+  TIM2->CCER |= (TIM_CCER_CC1E | TIM_CCER_CC2E | TIM_CCER_CC3E | TIM_CCER_CC4E);
+}
+
+
+// Angle Mode
 void PIDtask(void* Parameters){
   TickType_t lastWakeTime = xTaskGetTickCount();
   TickType_t previousTime = lastWakeTime; // Initialize previous time
-  TickType_t interval = pdMS_TO_TICKS(50); // 200 Hz
+  TickType_t interval = pdMS_TO_TICKS(5); // 200 Hz
 
+  float altitude;
   float roll, pitch, yaw; // local variables for Euler Angles
   float throttle, rollInput, pitchInput, yawInput; // user inputs
+
+  static bool motorsEnabled = true;
+
+  // EMA filter variables & constants
+  static float throttleFiltered = 0.0f;
+  static float rollInputFiltered = 0.0f;
+  static float pitchInputFiltered = 0.0f;
+  static float yawInputFiltered = 0.0f;
+
+  const float alpha = 0.2f;  // adjust as needed
+
+  // flags
+  bool ALT_H = false; // Altitude Hold flag
+  bool RTL = false; // Return to Launch flag
+  bool Emergency_Landing = false; // Emergency Landing flag
+  bool KILL_MOTORS = false; // Kill Motors flag
 
   for (;;){
     TickType_t currentTime = xTaskGetTickCount();
@@ -116,6 +167,11 @@ void PIDtask(void* Parameters){
       yaw = eulerAngles[2];
       xSemaphoreGive(eulerAnglesMutex); // release the mutex
     }
+    if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
+      altitude = loraList[2]; // Get altitude from loraList
+      xSemaphoreGive(loraMutex); // release the mutex
+    }
+
     // read user input from nRF24L01 (use mutex):
     if (xSemaphoreTake(nRF24Mutex, portMAX_DELAY)){
       // read user input here
@@ -123,22 +179,87 @@ void PIDtask(void* Parameters){
       rollInput = inputList[1]; // Roll input
       pitchInput = inputList[2]; // Pitch input
       yawInput = inputList[3]; // Yaw input
+
+      RTL = (inputList[4] != 0.0f);
+      Emergency_Landing = (inputList[5] != 0.0f);
+      KILL_MOTORS = (inputList[6] != 0.0f);
+      ALT_H = (inputList[7] != 0.0f); 
       xSemaphoreGive(nRF24Mutex); // release the mutex
     }
 
+    // ====== SHUTDOWN MOTORS ======
+    if (KILL_MOTORS) {
+      if (motorsEnabled) {
+        resetPID(&pidRoll);
+        resetPID(&pidPitch);
+        resetPID(&pidYaw);
+
+        // Only disable if currently enabled
+        disableMotors();  // your wrapper
+        motorsEnabled = false;
+      }
+
+      // stay in off state
+      vTaskDelayUntil(&lastWakeTime, interval);
+      continue;
+
+    } else {
+      if (!motorsEnabled) {
+        // Only re-enable if previously disabled
+        enableMotors();  // your wrapper
+        motorsEnabled = true;
+      }
+    }
+
+    // ====== RETURN TO LAUNCH ======
+    if (RTL){
+      rollInput = 0.0f;
+      pitchInput = 0.0f;
+
+      float homeYaw = 0.0f; // Replace with actual value when GPS is added
+      yawInput = homeYaw;
+
+      //// TODO: implement RTL logic
+    }
+
+    // ====== EMERGENCY LANDING ======
+    if (Emergency_Landing) {
+      rollInput = 0.0f;
+      pitchInput = 0.0f;
+      yawInput = 0.0f;
+      
+      //// TODO: implement emergency landing logic 
+      // Take the current throttle and slowly decrease it while considering altitude
+    }
+
+    // ====== ALTITUDE HOLD ======
+    if (ALT_H) {
+      //// TODO: implement altitude hold logic & use PID on throttle
+      throttleFiltered = computePID(&pidThrottle, throttle, altitude, dt);
+    }else{
+      // to remove the CONFLICT between EMA & PID
+      throttleFiltered = alpha * throttle  + (1 - alpha) * throttleFiltered;
+    }
+
+    // Apply EMA filter:
+    rollInputFiltered  = alpha * rollInput  + (1 - alpha) * rollInputFiltered;
+    pitchInputFiltered = alpha * pitchInput + (1 - alpha) * pitchInputFiltered;
+    yawInputFiltered   = alpha * yawInput   + (1 - alpha) * yawInputFiltered;
+
     // PID start:
-    float roll_correction = computePID(&pidRoll, rollInput, roll, dt);
-    float pitch_correction = computePID(&pidPitch, pitchInput, pitch, dt);
-    float yaw_correction = computePID(&pidYaw, yawInput, yaw, dt);
+    float roll_correction = computePID(&pidRoll, rollInputFiltered, roll, dt);
+    float pitch_correction = computePID(&pidPitch, pitchInputFiltered, pitch, dt);
+    float yaw_correction = computePID(&pidYaw, yawInputFiltered, yaw, dt);
+    // float throttle_correction = computePID(&pidThrottle, throttleFiltered, throttle, dt);
 
     // Motor Mixer Algorithm (Props-out), (not yet tested):
-    float motor1_output = throttle + roll_correction + pitch_correction + yaw_correction; // Front Left
-    float motor2_output = throttle - roll_correction + pitch_correction - yaw_correction; // Front Right
-    float motor3_output = throttle + roll_correction - pitch_correction - yaw_correction; // Back Left
-    float motor4_output = throttle - roll_correction - pitch_correction + yaw_correction; // Back Right
+    float motor1_output = throttleFiltered + roll_correction + pitch_correction + yaw_correction; // Front Left
+    float motor2_output = throttleFiltered - roll_correction + pitch_correction - yaw_correction; // Front Right
+    float motor3_output = throttleFiltered + roll_correction - pitch_correction - yaw_correction; // Back Left
+    float motor4_output = throttleFiltered - roll_correction - pitch_correction + yaw_correction; // Back Right
     
     // Failsafe & Limit motor outputs to the range [1000, 2000]:
-    if (throttle < 1050.0f) {
+    if (!ALT_H && throttleFiltered < 1050.0f) {
       resetPID(&pidRoll);
       resetPID(&pidPitch);
       resetPID(&pidYaw);
@@ -170,15 +291,6 @@ void RXtask(void* Parameters){
 }
 
 void loraTXtask(void* Parameters){
-  TickType_t interval = pdMS_TO_TICKS(1000);
-
-  for (;;){
-
-    vTaskDelay(interval);
-  }
-}
-
-void kalmanTask(void* Parameters){
   TickType_t interval = pdMS_TO_TICKS(1000);
 
   for (;;){
@@ -226,20 +338,20 @@ void freeRTOS_tasks_init(void){
   );
 
   xTaskCreate(
-    PIDtask,
-    "PID task",
-    256,
+    readSensorsTask,
+    "read Sensors Task: BMP280",
+    128,
     NULL,
     1,
     NULL
   );
 
   xTaskCreate(
-    kalmanTask,
-    "Kalman filter task for altitude",
+    PIDtask,
+    "PID task",
     256,
     NULL,
-    1, 
+    1,
     NULL
   );
 
