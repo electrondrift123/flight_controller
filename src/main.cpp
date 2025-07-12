@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <SPI.h>
 #include <STM32FreeRTOS.h>
 #include <RadioLib.h>
 #include <RF24.h>
@@ -11,6 +12,7 @@
 #include "sync.h"
 #include "sensors.h"
 // #include "shared_data.h"
+#include "main_rx.h" // Include main_rx for nRF24 radio handling
 #include "PID.h"
 
 void setup() {
@@ -21,10 +23,14 @@ void setup() {
   Wire.setClock(400000); // Set I2C clock to 400 kHz
   delay(250);
 
+  SPI.begin();
+  delay(250);
+
   buzzer_init(); // Initialize the buzzer
   sensors_init(); // the sensors initialization 
   used_gpio_init(); // Initialize GPIOs
   mutexes_init(); // Initialize mutexes
+  main_rx_init(); // Initialize nRF24 radio
  
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!

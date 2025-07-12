@@ -14,6 +14,9 @@ extern SemaphoreHandle_t eulerAnglesMutex;
 extern SemaphoreHandle_t nRF24Mutex;
 extern SemaphoreHandle_t loraMutex;
 
+// Task Handles
+extern TaskHandle_t radioTaskHandle;
+
 // Function to initialize all mutexes
 void mutexes_init(void);
 

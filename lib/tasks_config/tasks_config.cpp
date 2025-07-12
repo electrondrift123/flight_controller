@@ -14,6 +14,8 @@
 #include "shared_data.h"
 #include "sync.h"
 
+#include "main_rx.h"
+
 #include "PID.h"
 
 void buzz_it(uint16_t num, uint16_t delay_time = 500) {
@@ -40,6 +42,11 @@ void enableMotors(void) {
   TIM2->CCER |= (TIM_CCER_CC1E | TIM_CCER_CC2E | TIM_CCER_CC3E | TIM_CCER_CC4E);
 }
 
+// check sensor function
+bool sensorsReady(){
+  return BMP280_read(&bmpData) && MPU6050_read(&mpuData) && QMC5883P_read(&magData);
+}
+
 void blinkTask(void *pvParameters) {
   TickType_t interval = pdMS_TO_TICKS(1000); // 500 ms interval
   for(;;){
@@ -50,11 +57,8 @@ void blinkTask(void *pvParameters) {
   }
 }
 
-// check sensor function
-bool sensorsReady(){
-  return BMP280_read(&bmpData) && MPU6050_read(&mpuData) && QMC5883P_read(&magData);
-}
 
+// Madgwick filter task (sensor fusion)
 void MadgwickTask(void* Parameters) {
   const TickType_t intervalTicks = pdMS_TO_TICKS(5);  // 5ms ≈ 200Hz
   TickType_t prevTick = xTaskGetTickCount();
@@ -295,13 +299,33 @@ void PIDtask(void* Parameters){
   }
 }
 
-//// TODO: implement
+// nRF24 RX task
+//// TODO: modify so it can handle list
 void RXtask(void* Parameters){
-  TickType_t interval = pdMS_TO_TICKS(1000);
+  for (;;) {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for IRQ
 
-  for (;;){
+    uint8_t flags = radio.clearStatusFlags();
 
-    vTaskDelay(interval);
+    if (flags & RF24_RX_DR) {
+      while (radio.available()) {
+        uint8_t len = radio.getDynamicPayloadSize();
+        char buffer[33] = {0};  // one extra for null-terminator
+        radio.read(&buffer, len);
+
+        if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+          Serial.print("[nRF24 RX] Received: ");
+          Serial.println(buffer);
+          xSemaphoreGive(serialMutex);
+        }
+
+        //// TODO: process the received data:
+      }
+    }
+
+    if (flags & RF24_TX_DF) {
+      radio.flush_tx(); // not used on RX-only but good practice
+    }
   }
 }
 
@@ -379,7 +403,7 @@ void freeRTOS_tasks_init(void){
     128,
     NULL,
     1,
-    NULL
+    &radioTaskHandle
   );
 
   xTaskCreate(

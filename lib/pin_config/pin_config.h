@@ -1,14 +1,20 @@
 #ifndef PIN_CONFIG_H
 #define PIN_CONFIG_H
 
-// SPI default pins
+// ==== SPI default pins =====
 #define SPI_SCK_PIN       5   // PA5
 #define SPI_MISO_PIN      6   // PA6
 #define SPI_MOSI_PIN      7   // PA7
 
-// SX1278 pins
+// ==== SX1278 pins =====
+// #define LORA_NSS_PIN       
+// #define LORA_DIO0_PIN       
+// #define LORA_RST_PIN       
 
-// nRF24 pins
+// ===== nRF24 pins =====
+#define NRF_CE_PIN    PB12
+#define NRF_CSN_PIN   PA4
+#define NRF_IRQ_PIN   PB1  
 
 // ===== LED PIN ======
 #define BUILTIN_LED_PORT GPIOC

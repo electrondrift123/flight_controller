@@ -10,6 +10,9 @@ SemaphoreHandle_t eulerAnglesMutex;
 SemaphoreHandle_t nRF24Mutex;
 SemaphoreHandle_t loraMutex;
 
+// Task Handles:
+TaskHandle_t radioTaskHandle = NULL;
+
 void mutexes_init(void){
   serialMutex = xSemaphoreCreateMutex();
   if (serialMutex == NULL) {
