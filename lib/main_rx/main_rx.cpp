@@ -9,7 +9,7 @@
 
 RF24 radio(NRF_CE_PIN, NRF_CSN_PIN);
 uint8_t address[][6] = { "1Node", "2Node" };
-#define PIPE_INDEX 0
+
 
 // ------------------- ISR -------------------
 void nrfInterruptHandler(void) {

@@ -319,6 +319,20 @@ void RXtask(void* Parameters){
           xSemaphoreGive(serialMutex);
         }
 
+        // use mutex and read the telemetry list
+
+        // Prepare telemetry
+        int16_t telemetry[5] = {
+          1234,    // lat * 100 or similar
+          5678,    // lon * 100
+          120,     // altitude in meters
+          11300,   // battery in mV
+          90       // heading in degrees
+        };
+
+        // Send as ACK payload
+        radio.writeAckPayload(PIPE_INDEX, telemetry, sizeof(telemetry));
+
         //// TODO: process the received data:
       }
     }
@@ -406,14 +420,14 @@ void freeRTOS_tasks_init(void){
     &radioTaskHandle
   );
 
-  xTaskCreate(
-    loraTXtask,
-    "LoRa TX Task",
-    128,
-    NULL,
-    1,
-    NULL
-  );
+  // xTaskCreate(
+  //   loraTXtask,
+  //   "LoRa TX Task",
+  //   128,
+  //   NULL,
+  //   1,
+  //   NULL
+  // );
 
   xTaskCreate(
     batteryMonitorTask,

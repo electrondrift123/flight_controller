@@ -7,6 +7,7 @@
 
 extern RF24 radio;
 extern uint8_t address[][6];
+#define PIPE_INDEX 0
 
 void nrfInterruptHandler(void);
 bool main_rx_init(void);
