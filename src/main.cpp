@@ -34,10 +34,10 @@ void setup() {
  
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!
-  initPID(&pidRoll,  1.0f, 0.0f, 0.0f, -500.0f, 500.0f, 100.0f);
-  initPID(&pidPitch, 1.0f, 0.0f, 0.0f, -500.0f, 500.0f, 100.0f);
-  initPID(&pidYaw,   1.0f, 0.0f, 0.0f, -500.0f, 500.0f, 100.0f);
-  initPID(&pidThrottle,   1.0f, 0.0f, 0.0f, -500.0f, 500.0f, 100.0f);
+  initPID(&pidRoll,  1.0f, 0.0f, 0.0f, -200.0f, 200.0f, 100.0f);
+  initPID(&pidPitch, 1.0f, 0.0f, 0.0f, -200.0f, 200.0f, 100.0f);
+  initPID(&pidYaw,   1.0f, 0.0f, 0.0f, -200.0f, 200.0f, 100.0f);
+  initPID(&pidThrottle,   1.0f, 0.0f, 0.0f, 1000.0f, 2000.0f, 100.0f);
 
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
   vTaskStartScheduler();

@@ -12,7 +12,7 @@
 // #define LORA_RST_PIN       
 
 // ===== nRF24 pins =====
-#define NRF_CE_PIN    PB12
+#define NRF_CE_PIN    PB13
 #define NRF_CSN_PIN   PA4
 #define NRF_IRQ_PIN   PB1  
 

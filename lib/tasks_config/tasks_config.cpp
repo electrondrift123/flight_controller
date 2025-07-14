@@ -57,7 +57,6 @@ void blinkTask(void *pvParameters) {
   }
 }
 
-
 // Madgwick filter task (sensor fusion)
 void MadgwickTask(void* Parameters) {
   const TickType_t intervalTicks = pdMS_TO_TICKS(5);  // 5ms ≈ 200Hz
@@ -300,8 +299,10 @@ void PIDtask(void* Parameters){
 }
 
 // nRF24 RX task
-//// TODO: modify so it can handle list
+//// TODO: test it!!!!
 void RXtask(void* Parameters){
+  int16_t telemetry[5] = {0, 0, 0, 0, 0}; // Telemetry data to send back
+  // temporary for testing: {roll, pitch, yaw, altitude}
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for IRQ
 
@@ -313,23 +314,24 @@ void RXtask(void* Parameters){
         char buffer[33] = {0};  // one extra for null-terminator
         radio.read(&buffer, len);
 
-        if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-          Serial.print("[nRF24 RX] Received: ");
-          Serial.println(buffer);
-          xSemaphoreGive(serialMutex);
+        // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+        //   Serial.print("[nRF24 RX] Received: ");
+        //   Serial.println(buffer);
+        //   xSemaphoreGive(serialMutex);
+        // }
+
+        // use mutex and read the data for telemetry
+        if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
+          telemetry[0] = (int16_t) eulerAngles[0]; // roll
+          telemetry[1] = (int16_t) eulerAngles[1]; // pitch
+          telemetry[2] = (int16_t) eulerAngles[2]; // yaw
+          xSemaphoreGive(eulerAnglesMutex);
         }
-
-        // use mutex and read the telemetry list
-
-        // Prepare telemetry
-        int16_t telemetry[5] = {
-          1234,    // lat * 100 or similar
-          5678,    // lon * 100
-          120,     // altitude in meters
-          11300,   // battery in mV
-          90       // heading in degrees
-        };
-
+        if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
+          telemetry[3] = (int16_t) loraList[2]; // altitude
+          xSemaphoreGive(loraMutex);
+        }
+        
         // Send as ACK payload
         radio.writeAckPayload(PIPE_INDEX, telemetry, sizeof(telemetry));
 
@@ -343,15 +345,15 @@ void RXtask(void* Parameters){
   }
 }
 
-//// TODO: implement
-void loraTXtask(void* Parameters){
-  TickType_t interval = pdMS_TO_TICKS(1000);
+// //// TODO: implement
+// void loraTXtask(void* Parameters){
+//   TickType_t interval = pdMS_TO_TICKS(1000);
 
-  for (;;){
+//   for (;;){
 
-    vTaskDelay(interval);
-  }
-}
+//     vTaskDelay(interval);
+//   }
+// }
 
 //// TODO: find ADC pin for this task
 void batteryMonitorTask(void* Parameters){
