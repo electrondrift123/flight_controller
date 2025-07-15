@@ -2,6 +2,13 @@
 #include <Arduino.h>
 
 // uses active buzzer on PC13
+void Blink_Init(void) {
+  RCC->AHB1ENR |= (1 << 2); // Enable GPIOC clock
+  GPIOC->MODER &= ~(3 << (BUILTIN_LED_PIN * 2)); // Clear the setup bits (reset state)
+  GPIOC->MODER |= (1 << (BUILTIN_LED_PIN * 2)); // Set it as output [01] at [26:25]
+  GPIOC->BSRR = (1 << BUILTIN_LED_PIN ); // Set LED OFF (active low)
+}
+
 void Buzzer_Init(void){
   RCC->AHB1ENR |= (1 << 2); // enable GPIOC clock at pos[2]
   GPIOC->MODER &= ~(3 << (BUZZER_PIN * 2)); // clear the setup bits (reset state)
@@ -61,6 +68,7 @@ void MotorPWM_TIM2_Init(void) {
 }
 
 void used_gpio_init(void){
+    Blink_Init(); // Initialize the built-in LED on PC13
     Buzzer_Init(); // Initialize buzzer on PC13
     MotorPWM_TIM2_Init(); // Initialize TIM2 for motor control PWM on PA0-
 }

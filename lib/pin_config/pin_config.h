@@ -1,6 +1,10 @@
 #ifndef PIN_CONFIG_H
 #define PIN_CONFIG_H
 
+// ==== i2c default pins =====
+#define I2C_SCL1_PIN       6   // PB6
+#define I2C_SDA1_PIN       7   // PB7
+
 // ==== SPI default pins =====
 #define SPI_SCK_PIN       5   // PA5
 #define SPI_MISO_PIN      6   // PA6

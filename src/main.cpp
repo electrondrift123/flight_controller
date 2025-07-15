@@ -18,6 +18,8 @@
 void setup() {
   Serial.begin(115200);
   while (!Serial);
+  // delay(250);
+  Serial.println("Starting setup...");
 
   Wire.begin();
   Wire.setClock(400000); // Set I2C clock to 400 kHz
@@ -26,11 +28,20 @@ void setup() {
   SPI.begin();
   delay(250);
 
-  buzzer_init(); // Initialize the buzzer
+  // buzzer_init(); // Initialize the buzzer
   sensors_init(); // the sensors initialization 
-  used_gpio_init(); // Initialize GPIOs
+  used_gpio_init(); // Initialize GPIOs (buzzer, motors, blink)
   mutexes_init(); // Initialize mutexes
   main_rx_init(); // Initialize nRF24 radio
+
+  GPIOC->BSRR = (1 << (BUILTIN_LED_PIN + 16)); // Set LED OFF (active low)
+  delay(500);
+  GPIOC->BSRR = (1 << BUILTIN_LED_PIN); // Set LED ON
+  delay(500);
+  GPIOC->BSRR = (1 << (BUILTIN_LED_PIN + 16)); // Set LED OFF (active low)
+  delay(500);
+  GPIOC->BSRR = (1 << BUILTIN_LED_PIN); // Set LED ON
+  delay(500);
  
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!
@@ -39,16 +50,17 @@ void setup() {
   initPID(&pidYaw,   1.0f, 0.0f, 0.0f, -200.0f, 200.0f, 100.0f);
   initPID(&pidThrottle,   1.0f, 0.0f, 0.0f, 1000.0f, 2000.0f, 100.0f);
 
+  interrupts();
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
+  Serial.println("FreeRTOS tasks initialized!");
   vTaskStartScheduler();
 }
 
 void loop() {
-  vTaskDelay(pdMS_TO_TICKS(5000)); // Delay for 5000 ms
+  // empty
+  // Do not put vTaskDelay() or any other blocking code here.
 }
 
 
 //// TODO:
-// 1. lora task
-// 2. main radio task
-// 3. more failsafes
+// 1. test it all on the hardware!
