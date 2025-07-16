@@ -9,6 +9,11 @@
 #define QMC5883P_ADDR 0x2C
 
 typedef struct {
+  // Calibration values
+  int16_t minX, maxX;
+  int16_t minY, maxY;
+  int16_t minZ, maxZ;
+
   float mx, my, mz;
   float angleYaw;
 } magData_t;

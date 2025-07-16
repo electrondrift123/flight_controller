@@ -89,10 +89,22 @@ void MadgwickTask(void* Parameters) {
           }
 
           if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-            Serial.print("Euler: ");
-            Serial.print(madData.roll); Serial.print(", ");
-            Serial.print(madData.pitch); Serial.print(", ");
-            Serial.println(madData.yaw);
+            // Angles are not right!
+            // Serial.print("Euler: ");
+            // Serial.print(madData.roll); Serial.print(", ");
+            // Serial.print(madData.pitch); Serial.print(", ");
+            // Serial.println(madData.yaw);
+
+            // It prints what I expected (It works fine except for magData):
+            // Acc
+            // Serial.print("Accel: "); Serial.print(mpuData.ax); Serial.print(", ");
+            // Serial.print(mpuData.ay); Serial.print(", "); Serial.println(mpuData.az);
+            // Gyro
+            // Serial.print("Gyro: "); Serial.print(mpuData.wx); Serial.print(", ");
+            // Serial.print(mpuData.wy); Serial.print(", "); Serial.println(mpuData.wz);
+            // Mag
+            Serial.print("Mag: "); Serial.print(magData.mx); Serial.print(", ");
+            Serial.print(magData.my); Serial.print(", "); Serial.println(magData.mz);
             xSemaphoreGive(serialMutex);
           }
 
@@ -382,7 +394,7 @@ void freeRTOS_tasks_init(void){
     "blinkTask",         // Name of the task
     128,                // Stack size in words
     NULL,                // Task input parameter
-    2,                   // Priority
+    1,                   // Priority
     NULL                 // Task handle
   );
   if (result != pdPASS) {

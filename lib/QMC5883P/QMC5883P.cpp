@@ -92,3 +92,6 @@ float compensateYaw_(float mx, float my, float mz, float roll, float pitch) {
 void QMC5883P_updateYawWithTilt(magData_t* mag, float roll, float pitch) {
   mag->angleYaw = compensateYaw_(mag->mx, mag->my, mag->mz, roll, pitch);
 }
+
+
+//// TODO: create a function that returns the right calibration constants

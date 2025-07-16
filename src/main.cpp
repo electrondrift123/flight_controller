@@ -32,16 +32,7 @@ void setup() {
   sensors_init(); // the sensors initialization 
   used_gpio_init(); // Initialize GPIOs (buzzer, motors, blink)
   mutexes_init(); // Initialize mutexes
-  main_rx_init(); // Initialize nRF24 radio
-
-  GPIOC->BSRR = (1 << (BUILTIN_LED_PIN + 16)); // Set LED OFF (active low)
-  delay(500);
-  GPIOC->BSRR = (1 << BUILTIN_LED_PIN); // Set LED ON
-  delay(500);
-  GPIOC->BSRR = (1 << (BUILTIN_LED_PIN + 16)); // Set LED OFF (active low)
-  delay(500);
-  GPIOC->BSRR = (1 << BUILTIN_LED_PIN); // Set LED ON
-  delay(500);
+  // main_rx_init(); // Initialize nRF24 radio
  
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!
@@ -50,9 +41,12 @@ void setup() {
   initPID(&pidYaw,   1.0f, 0.0f, 0.0f, -200.0f, 200.0f, 100.0f);
   initPID(&pidThrottle,   1.0f, 0.0f, 0.0f, 1000.0f, 2000.0f, 100.0f);
 
-  interrupts();
+  // interrupts();
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
   Serial.println("FreeRTOS tasks initialized!");
+  buzz_on();
+  delay(500);
+  buzz_off();
   vTaskStartScheduler();
 }
 
