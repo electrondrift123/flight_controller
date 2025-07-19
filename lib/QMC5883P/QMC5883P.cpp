@@ -60,7 +60,7 @@ bool QMC5883P_read(magData_t* magData) {
   if (scaleY == 0) scaleY = 1;
   if (scaleZ == 0) scaleZ = 1;
 
-  // Normalize to [-1, 1] // swap mx & my (x @ 0 deg / north) to match mpu6050
+  // // Normalize to [-1, 1] // swap mx & my (x @ 0 deg / north) to match mpu6050
   magData->mx = -(mx_f - offsetX) / scaleX;
   magData->my = (my_f - offsetY) / scaleY;
   magData->mz = (mz_f - offsetZ) / scaleZ;
@@ -91,3 +91,8 @@ void QMC5883P_updateYawWithTilt(magData_t* mag, float roll, float pitch) {
 
 //// TODO: create a function that returns the right calibration constants
 
+void calibrate_compass(void){
+  // the compass will face north and then calibrate.
+  // This should update the min/max values for the axes
+  // that will result in mx = 1, my = 0, mz = 0 (since it is facing north)
+}

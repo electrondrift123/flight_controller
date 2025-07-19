@@ -22,4 +22,7 @@ void sensors_init(void) {
     Serial.println("QMC5883P init Failed!");
     while (1); // halt or retry
   }
+  Serial.println("Place the compass to face north for calibration.");
+  calibrate_compass();
+  Serial.println("QMC5883P initialized successfully!");
 }

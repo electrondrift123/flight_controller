@@ -46,7 +46,7 @@ void setup() {
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
   Serial.println("FreeRTOS tasks initialized!");
   buzz_on();
-  delay(500);
+  delay(200);
   buzz_off();
   vTaskStartScheduler();
 }
