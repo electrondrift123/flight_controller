@@ -10,11 +10,11 @@ void Blink_Init(void) {
 }
 
 void Buzzer_Init(void){
-  RCC->AHB1ENR |= (1 << 2); // enable GPIOC clock at pos[2]
-  GPIOC->MODER &= ~(3 << (BUZZER_PIN * 2)); // clear the setup bits (reset state)
-  GPIOC->MODER |= (1 << (BUZZER_PIN * 2)); // set it as output [01] at [14:13]
+  RCC->AHB1ENR |= (1 << 1); // enable GPIOB clock at pos[1]
+  BUZZER_PORT->MODER &= ~(3 << (BUZZER_PIN * 2)); // clear the setup bits (reset state)
+  BUZZER_PORT->MODER |= (1 << (BUZZER_PIN * 2)); // set it as output [01] at [14:13]
 
-  GPIOC->BSRR = (1 << (BUZZER_PIN + 16)); // HIGH = OFF LED
+  BUZZER_PORT->BSRR = (1 << (BUZZER_PIN + 16)); // HIGH = OFF LED
 }
 
 void MotorPWM_TIM2_Init(void) {

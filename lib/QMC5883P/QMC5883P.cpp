@@ -30,11 +30,6 @@ bool QMC5883P_init(void) {
   return true;
 }
 
-// Not yet tried mounted on drone
-static float minX = 1200, maxX = 2100; // this is okay for y axis
-static float minY = 1200, maxY = 1900; // this is okay now (x axis)
-static float minZ = 4900, maxZ = 5600; // acceptable
-
 bool QMC5883P_read(magData_t* magData) {
   Wire.beginTransmission(QMC5883P_ADDR);
   Wire.write(REG_DATA_X_LSB);
@@ -95,3 +90,4 @@ void QMC5883P_updateYawWithTilt(magData_t* mag, float roll, float pitch) {
 
 
 //// TODO: create a function that returns the right calibration constants
+
