@@ -88,58 +88,67 @@ void MadgwickTask(void* Parameters) {
             xSemaphoreGive(eulerAnglesMutex);
           }
 
-          if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-            // Angles are not right!
-            // Serial.print("Euler: ");
-            // Serial.print(madData.roll); Serial.print(", ");
-            // Serial.print(madData.pitch); Serial.print(", ");
-            // Serial.println(madData.yaw);
+          // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+          //   // Angles are not right!
+          //   Serial.print("Euler: ");
+          //   Serial.print(madData.roll); Serial.print(", ");
+          //   Serial.print(madData.pitch); Serial.print(", ");
+          //   Serial.println(madData.yaw);
 
-            // It prints what I expected (It works fine except for magData):
-            // Acc
-            // Serial.print("Accel: "); Serial.print(mpuData.ax); Serial.print(", ");
-            // Serial.print(mpuData.ay); Serial.print(", "); Serial.println(mpuData.az);
-            // Gyro
-            // Serial.print("Gyro: "); Serial.print(mpuData.wx); Serial.print(", ");
-            // Serial.print(mpuData.wy); Serial.print(", "); Serial.println(mpuData.wz);
-            // Mag
-            Serial.print("Mag: "); Serial.print(magData.mx); Serial.print(", ");
-            Serial.print(magData.my); Serial.print(", "); Serial.println(magData.mz);
-            xSemaphoreGive(serialMutex);
-          }
+          //   // It prints what I expected (It works fine except for magData):
+          //   // Acc
+          //   // Serial.print("Accel: "); Serial.print(mpuData.ax); Serial.print(", ");
+          //   // Serial.print(mpuData.ay); Serial.print(", "); Serial.println(mpuData.az);
+          //   // Gyro
+          //   // Serial.print("Gyro: "); Serial.print(mpuData.wx); Serial.print(", ");
+          //   // Serial.print(mpuData.wy); Serial.print(", "); Serial.println(mpuData.wz);
+          //   // Mag
+          //   // Serial.print("Mag: "); Serial.print(magData.mx); Serial.print(", ");
+          //   // Serial.print(magData.my); Serial.print(", "); Serial.println(magData.mz);
+          //   xSemaphoreGive(serialMutex);
+          // }
 
           xSemaphoreGive(wireMutex);
         }
       }
     }
     // a slight delay
+    // vTaskDelayUntil(&prevTick, intervalTicks);
     vTaskDelay(5);
   }
 }
 
-// // BMP280 sensor reading task
-// void readSensorsTask(void* Parameters) {
-//   const TickType_t intervalTicks = pdMS_TO_TICKS(10);  // 10ms ≈ 100Hz
-//   TickType_t lastWakeTime = xTaskGetTickCount();
+// BMP280 sensor reading task
+void readSensorsTask(void* Parameters) {
+  const TickType_t intervalTicks = pdMS_TO_TICKS(10);  // 10ms ≈ 100Hz
+  TickType_t lastWakeTime = xTaskGetTickCount();
 
-//   float local_altitude;
+  float local_altitude;
 
-//   for (;;) {
-//     // read the BMP280 sensor
-//     if (xSemaphoreTake(wireMutex, portMAX_DELAY)){
-//       // read BMP280 sensor: Altitude
-//       BMP280_read(&bmpData);
-//       local_altitude = bmpData.altitude; // Store altitude locally
-//       xSemaphoreGive(wireMutex);
-//     }
-//     // Update shared data: BMP280 altitude
-//     if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
-//       loraList[2] = local_altitude; // Update altitude in loraList
-//       xSemaphoreGive(loraMutex);
-//     }
-//     vTaskDelayUntil(&lastWakeTime, intervalTicks); // a slight delay
-//   }
-// }
+  for (;;) {
+    // read the BMP280 sensor
+    if (xSemaphoreTake(wireMutex, portMAX_DELAY)){
+      // read BMP280 sensor: Altitude
+      BMP280_read(&bmpData);
+      local_altitude = bmpData.altitude; // Store altitude locally
+      xSemaphoreGive(wireMutex);
+    }
+    // Update shared data: BMP280 altitude
+    if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
+      loraList[2] = local_altitude; // Update altitude in loraList
+      xSemaphoreGive(loraMutex);
+    }
+
+    // debug printf
+    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+      Serial.print("Altitude: "); Serial.println(local_altitude);
+      xSemaphoreGive(serialMutex);
+    }
+
+    vTaskDelay(intervalTicks);
+    // vTaskDelayUntil(&lastWakeTime, intervalTicks); // a slight delay
+  }
+}
 
 // // Angle Mode
 // void PIDtask(void* Parameters){

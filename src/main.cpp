@@ -58,4 +58,5 @@ void loop() {
 
 
 //// TODO:
-// 1. test it all on the hardware!
+// 1. calibrate the compass
+// 2. fix the madgwick
