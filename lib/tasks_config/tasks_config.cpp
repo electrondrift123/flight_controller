@@ -61,6 +61,7 @@ void blinkTask(void *pvParameters) {
 void MadgwickTask(void* Parameters) {
   const TickType_t intervalTicks = pdMS_TO_TICKS(5);  // 5ms ≈ 200Hz
   TickType_t prevTick = xTaskGetTickCount();
+  TickType_t lastWakeTime = xTaskGetTickCount();
 
   for (;;) {
     TickType_t nowTick = xTaskGetTickCount();
@@ -92,7 +93,6 @@ void MadgwickTask(void* Parameters) {
         }
 
         // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-        //   // Angles are not right!
         //   Serial.print("Euler: ");
         //   Serial.print(madData.roll); Serial.print(", ");
         //   Serial.print(madData.pitch); Serial.print(", ");
@@ -113,14 +113,13 @@ void MadgwickTask(void* Parameters) {
       }
     }
     // a slight delay
-    // vTaskDelayUntil(&prevTick, intervalTicks);
-    vTaskDelay(5);
+    vTaskDelayUntil(&lastWakeTime, intervalTicks);
   }
 }
 
 // BMP280 sensor reading task
 void readSensorsTask(void* Parameters) {
-  const TickType_t intervalTicks = pdMS_TO_TICKS(10);  // 10ms ≈ 100Hz
+  const TickType_t intervalTicks = pdMS_TO_TICKS(100);  // 10ms ≈ 100Hz
   TickType_t lastWakeTime = xTaskGetTickCount();
 
   float local_altitude;
@@ -403,7 +402,7 @@ void freeRTOS_tasks_init(void){
     "blinkTask",         // Name of the task
     128,                // Stack size in words
     NULL,                // Task input parameter
-    2,                   // Priority
+    1,                   // Priority
     NULL                 // Task handle
   );
   if (result != pdPASS) {
