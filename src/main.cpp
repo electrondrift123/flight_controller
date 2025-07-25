@@ -58,5 +58,5 @@ void loop() {
 
 
 //// TODO:
-// 1. calibrate the compass
-// 2. fix the madgwick
+// 1. debug printing on BMP280 sensor tasks
+

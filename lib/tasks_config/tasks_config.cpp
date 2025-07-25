@@ -145,8 +145,8 @@ void readSensorsTask(void* Parameters) {
       xSemaphoreGive(serialMutex);
     }
 
-    vTaskDelay(intervalTicks);
-    // vTaskDelayUntil(&lastWakeTime, intervalTicks); // a slight delay
+    // vTaskDelay(intervalTicks);
+    vTaskDelayUntil(&lastWakeTime, intervalTicks); // a slight delay
   }
 }
 
@@ -427,19 +427,19 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
-  // result = xTaskCreate(
-  //   readSensorsTask,
-  //   "read Sensors Task: BMP280",
-  //   256,
-  //   NULL,
-  //   1,
-  //   NULL
-  // );
-  // if (result != pdPASS) {
-  //   // Handle task creation failure
-  //   Serial.println("Failed to create readSensorsTask");
-  //   while (1); // Infinite loop to indicate failure
-  // }
+  result = xTaskCreate(
+    readSensorsTask,
+    "read Sensors Task: BMP280",
+    256,
+    NULL,
+    1,
+    NULL
+  );
+  if (result != pdPASS) {
+    // Handle task creation failure
+    Serial.println("Failed to create readSensorsTask");
+    while (1); // Infinite loop to indicate failure
+  }
 
   // result = xTaskCreate(
   //   PIDtask,
