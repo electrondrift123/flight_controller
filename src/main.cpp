@@ -58,5 +58,13 @@ void loop() {
 
 
 //// TODO:
-// 1. debug printing on BMP280 sensor tasks
+// 1. debug the altitude output of the readSensorsTask
+
+// Note: 
+// - The BMP280 lib is good
+// - The EMA is not the problem
+// - the priority number is not the problem
+// - the stack size is not the problem
+// - the altitude value are way too off
+// - the same library works right on arduino IDE (without freeRTOS)
 

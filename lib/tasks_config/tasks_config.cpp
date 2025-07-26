@@ -119,7 +119,7 @@ void MadgwickTask(void* Parameters) {
 
 // BMP280 sensor reading task
 void readSensorsTask(void* Parameters) {
-  const TickType_t intervalTicks = pdMS_TO_TICKS(100);  // 10ms ≈ 100Hz
+  const TickType_t intervalTicks = pdMS_TO_TICKS(10);  // 10ms ≈ 100Hz
   TickType_t lastWakeTime = xTaskGetTickCount();
 
   float local_altitude;
@@ -128,8 +128,14 @@ void readSensorsTask(void* Parameters) {
     // read the BMP280 sensor
     if (xSemaphoreTake(wireMutex, portMAX_DELAY)){
       // read BMP280 sensor: Altitude
-      BMP280_read(&bmpData);
-      local_altitude = bmpData.altitude; // Store altitude locally
+      if (BMP280_read(&bmpData)){
+        local_altitude = bmpData.altitude; // Store altitude locally
+      }else {
+        Serial.println("BMP280 read failed!");
+        local_altitude = 0.0f; // Set to zero if read fails
+        buzz_on();
+        while(1);
+      }
       xSemaphoreGive(wireMutex);
     }
     // Update shared data: BMP280 altitude
