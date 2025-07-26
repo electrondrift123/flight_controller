@@ -10,8 +10,11 @@ SemaphoreHandle_t eulerAnglesMutex;
 SemaphoreHandle_t nRF24Mutex;
 SemaphoreHandle_t loraMutex;
 
+SemaphoreHandle_t madgwickMutex;
+
 // Task Handles:
 TaskHandle_t radioTaskHandle = NULL;
+
 
 void mutexes_init(void){
   serialMutex = xSemaphoreCreateMutex();
@@ -44,6 +47,12 @@ void mutexes_init(void){
   eulerAnglesMutex = xSemaphoreCreateMutex();
   if (eulerAnglesMutex == NULL) {
     Serial.println("Failed to create Euler Angles mutex!");
+    while (1); // halt or retry
+  }
+
+  madgwickMutex = xSemaphoreCreateMutex();
+  if (madgwickMutex == NULL) {
+    Serial.println("Failed to create Madgwick mutex!");
     while (1); // halt or retry
   }
 }

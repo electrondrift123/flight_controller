@@ -30,4 +30,7 @@ extern volatile float eulerAngles[3];
 extern volatile float inputList[8]; // [T, R, P, Y, RTL, EL, Kill, ALT_H]
 extern volatile float loraList[6]; //[Lat, lon, alt, heading, distance, batt]
 
+// from sensor reading task
+extern volatile float MadgwickSensorList[9];
+
 #endif // SHARED_DATA_H

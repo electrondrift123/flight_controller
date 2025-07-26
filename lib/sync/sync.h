@@ -17,6 +17,9 @@ extern SemaphoreHandle_t loraMutex;
 // Task Handles
 extern TaskHandle_t radioTaskHandle;
 
+// from sensor reading task
+extern SemaphoreHandle_t madgwickMutex;
+
 // Function to initialize all mutexes
 void mutexes_init(void);
 

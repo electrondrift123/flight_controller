@@ -57,11 +57,83 @@ void blinkTask(void *pvParameters) {
   }
 }
 
+void readSensorsTask(void* Parameters) {
+  const TickType_t intervalTicks = pdMS_TO_TICKS(4);  // 5ms ≈ 200Hz
+  TickType_t lastWakeTime = xTaskGetTickCount();
+
+  float local_altitude; 
+  float ax, ay, az, wx, wy, wz, mx, my, mz; // Madgwick
+
+  for (;;) {
+    // read the BMP280 sensor
+    if (xSemaphoreTake(wireMutex, portMAX_DELAY)){
+      // read MPU6050, BMP280, Magnetometer sensor: 
+      if (sensorsReady()) {
+        // Successfully read MPU6050 data
+        ax = mpuData.ax;
+        ay = mpuData.ay;
+        az = mpuData.az;
+        wx = mpuData.wx;
+        wy = mpuData.wy;
+        wz = mpuData.wz;
+        mx = magData.mx;
+        my = magData.my;
+        mz = magData.mz;
+
+        local_altitude = bmpData.altitude; // Store altitude locally
+      }else {
+        Serial.println("MPU6050 | COMPASS | BMP280 read failed!");
+        local_altitude = 0.0f; // Set to zero if read fails
+        buzz_on();
+        while(1);
+      }
+      xSemaphoreGive(wireMutex);
+    }
+
+    // update the Madgwick's data:
+    if (xSemaphoreTake(madgwickMutex, portMAX_DELAY)){
+      MadgwickSensorList[0] = ax; // Accel X
+      MadgwickSensorList[1] = ay; // Accel Y
+      MadgwickSensorList[2] = az; // Accel Z
+      MadgwickSensorList[3] = wx; // Gyro X
+      MadgwickSensorList[4] = wy; // Gyro Y
+      MadgwickSensorList[5] = wz; // Gyro Z
+      MadgwickSensorList[6] = mx; // Mag X
+      MadgwickSensorList[7] = my; // Mag Y
+      MadgwickSensorList[8] = mz; // Mag Z
+      xSemaphoreGive(madgwickMutex);
+    }
+
+    // Update shared data: BMP280 altitude
+    if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
+      loraList[2] = local_altitude; // Update altitude in loraList
+      xSemaphoreGive(loraMutex);
+    }
+
+    // debug printf
+    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+      // Serial.print("Euler: ");
+      // Serial.print(madData.roll); Serial.print(", ");
+      // Serial.print(madData.pitch); Serial.print(", ");
+      // Serial.println(madData.yaw);
+
+      Serial.print("Altitude: "); Serial.println(local_altitude);
+      xSemaphoreGive(serialMutex);
+    }
+
+    vTaskDelayUntil(&lastWakeTime, intervalTicks); // a slight delay
+  }
+}
+
+
 // Madgwick filter task (sensor fusion)
 void MadgwickTask(void* Parameters) {
   const TickType_t intervalTicks = pdMS_TO_TICKS(5);  // 5ms ≈ 200Hz
   TickType_t prevTick = xTaskGetTickCount();
   TickType_t lastWakeTime = xTaskGetTickCount();
+
+  // local varibles for sensors data
+  float ax, ay, az, wx, wy, wz, mx, my, mz;
 
   for (;;) {
     TickType_t nowTick = xTaskGetTickCount();
@@ -71,87 +143,58 @@ void MadgwickTask(void* Parameters) {
       float dt = deltaTick * portTICK_PERIOD_MS / 1000.0f;  // dt in seconds
       prevTick = nowTick;
 
-      if (sensorsReady()) {
-        if (xSemaphoreTake(wireMutex, portMAX_DELAY)) {
-
-          MadgwickFilterUpdate(&madData,
-            mpuData.wx, mpuData.wy, mpuData.wz,
-            mpuData.ax, mpuData.ay, mpuData.az,
-            magData.mx, magData.my, magData.mz,
-            dt);
-
-          MadgwickGetEuler(&madData);
-
-          if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
-            eulerAngles[0] = madData.roll;
-            eulerAngles[1] = madData.pitch;
-            eulerAngles[2] = madData.yaw;
-            xSemaphoreGive(eulerAnglesMutex);
-          }
-
-          xSemaphoreGive(wireMutex);
-        }
-
-        // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-        //   Serial.print("Euler: ");
-        //   Serial.print(madData.roll); Serial.print(", ");
-        //   Serial.print(madData.pitch); Serial.print(", ");
-        //   Serial.println(madData.yaw);
-
-        //   // It prints what I expected (It works fine except for magData):
-        //   // Acc
-        //   // Serial.print("Accel: "); Serial.print(mpuData.ax); Serial.print(", ");
-        //   // Serial.print(mpuData.ay); Serial.print(", "); Serial.println(mpuData.az);
-        //   // Gyro
-        //   // Serial.print("Gyro: "); Serial.print(mpuData.wx); Serial.print(", ");
-        //   // Serial.print(mpuData.wy); Serial.print(", "); Serial.println(mpuData.wz);
-        //   // Mag
-        //   // Serial.print("Mag: "); Serial.print(magData.mx); Serial.print(", ");
-        //   // Serial.print(magData.my); Serial.print(", "); Serial.println(magData.mz);
-        //   xSemaphoreGive(serialMutex);
-        // }
+      // read the sensors data
+      if (xSemaphoreTake(madgwickMutex, portMAX_DELAY)) {
+        ax = MadgwickSensorList[0]; // Accel X
+        ay = MadgwickSensorList[1]; // Accel Y
+        az = MadgwickSensorList[2]; // Accel Z
+        wx = MadgwickSensorList[3]; // Gyro X
+        wy = MadgwickSensorList[4]; // Gyro Y
+        wz = MadgwickSensorList[5]; // Gyro Z
+        mx = MadgwickSensorList[6]; // Mag X
+        my = MadgwickSensorList[7]; // Mag Y
+        mz = MadgwickSensorList[8]; // Mag Z
+        xSemaphoreGive(madgwickMutex);
       }
+
+      MadgwickFilterUpdate(&madData,
+        wx, wy, wz,
+        ax, ay, az,
+        mx, my, mz,
+        dt);
+
+      MadgwickGetEuler(&madData);
+
+      if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
+        eulerAngles[0] = madData.roll;
+        eulerAngles[1] = madData.pitch;
+        eulerAngles[2] = madData.yaw;
+        xSemaphoreGive(eulerAnglesMutex);
+      }
+
+
+      // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+      //   Serial.print("Euler: ");
+      //   Serial.print(madData.roll); Serial.print(", ");
+      //   Serial.print(madData.pitch); Serial.print(", ");
+      //   Serial.println(madData.yaw);
+
+      //   // It prints what I expected (It works fine except for magData):
+      //   // Acc
+      //   // Serial.print("Accel: "); Serial.print(mpuData.ax); Serial.print(", ");
+      //   // Serial.print(ay); Serial.print(", "); Serial.println(az);
+      //   // Gyro
+      //   // Serial.print("Gyro: "); Serial.print(mpuData.wx); Serial.print(", ");
+      //   // Serial.print(wy); Serial.print(", "); Serial.println(wz);
+      //   // Mag
+      //   // Serial.print("Mag: "); Serial.print(magData.mx); Serial.print(", ");
+      //   // Serial.print(my); Serial.print(", "); Serial.println(mz);
+      //   xSemaphoreGive(serialMutex);
+      // }
+      
     }
     // a slight delay
     vTaskDelayUntil(&lastWakeTime, intervalTicks);
-  }
-}
-
-// BMP280 sensor reading task
-void readSensorsTask(void* Parameters) {
-  const TickType_t intervalTicks = pdMS_TO_TICKS(10);  // 10ms ≈ 100Hz
-  TickType_t lastWakeTime = xTaskGetTickCount();
-
-  float local_altitude;
-
-  for (;;) {
-    // read the BMP280 sensor
-    if (xSemaphoreTake(wireMutex, portMAX_DELAY)){
-      // read BMP280 sensor: Altitude
-      if (BMP280_read(&bmpData)){
-        local_altitude = bmpData.altitude; // Store altitude locally
-      }else {
-        Serial.println("BMP280 read failed!");
-        local_altitude = 0.0f; // Set to zero if read fails
-        buzz_on();
-        while(1);
-      }
-      xSemaphoreGive(wireMutex);
-    }
-    // Update shared data: BMP280 altitude
-    if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
-      loraList[2] = local_altitude; // Update altitude in loraList
-      xSemaphoreGive(loraMutex);
-    }
-
-    // debug printf
-    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-      Serial.print("Altitude: "); Serial.println(local_altitude);
-      xSemaphoreGive(serialMutex);
-    }
-
-    // vTaskDelay(intervalTicks);
-    vTaskDelayUntil(&lastWakeTime, intervalTicks); // a slight delay
   }
 }
 
@@ -417,6 +460,20 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
+  result = xTaskCreate(
+    readSensorsTask,
+    "read Sensors Task: BMP280",
+    256,
+    NULL,
+    2,
+    NULL
+  );
+  if (result != pdPASS) {
+    // Handle task creation failure
+    Serial.println("Failed to create readSensorsTask");
+    while (1); // Infinite loop to indicate failure
+  }
+
   // sensors data reading task
   result = xTaskCreate(
     MadgwickTask,
@@ -429,20 +486,6 @@ void freeRTOS_tasks_init(void){
   if (result != pdPASS) {
     // Handle task creation failure
     Serial.println("Failed to create MadgwickTask");
-    while (1); // Infinite loop to indicate failure
-  }
-
-  result = xTaskCreate(
-    readSensorsTask,
-    "read Sensors Task: BMP280",
-    256,
-    NULL,
-    1,
-    NULL
-  );
-  if (result != pdPASS) {
-    // Handle task creation failure
-    Serial.println("Failed to create readSensorsTask");
     while (1); // Infinite loop to indicate failure
   }
 
