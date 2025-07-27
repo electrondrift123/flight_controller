@@ -12,7 +12,7 @@ int16_t dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
 int32_t t_fine;
 
 // smoothens the altitude reading: X = (1 - alpha) * X + alpha * X_prev, (LPF: EMA)
-float alpha = 0.75f;
+float alpha = 0.90f;
 float smoothedAltitude = 0.0f;
 
 void updateAltitude(float rawAltitude) {

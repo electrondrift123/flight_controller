@@ -29,7 +29,6 @@ void setup() {
   SPI.begin();
   delay(250);
 
-  // buzzer_init(); // Initialize the buzzer
   sensors_init(); // the sensors initialization 
   used_gpio_init(); // Initialize GPIOs (buzzer, motors, blink)
   mutexes_init(); // Initialize mutexes
