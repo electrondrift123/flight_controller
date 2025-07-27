@@ -14,7 +14,7 @@
 // #include "shared_data.h"
 #include "main_rx.h" // Include main_rx for nRF24 radio handling
 #include "PID.h"
-
+#include "WDT.h"
 
 void setup() {
   Serial.begin(115200);
@@ -29,6 +29,7 @@ void setup() {
   SPI.begin();
   delay(250);
 
+  IWDG_Init(); // watchdogtimer initialization for failsafes
   sensors_init(); // the sensors initialization 
   used_gpio_init(); // Initialize GPIOs (buzzer, motors, blink)
   mutexes_init(); // Initialize mutexes

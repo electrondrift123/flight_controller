@@ -12,6 +12,9 @@ SemaphoreHandle_t loraMutex;
 
 SemaphoreHandle_t madgwickMutex;
 
+SemaphoreHandle_t watchdogMutex;
+
+
 // Task Handles:
 TaskHandle_t radioTaskHandle = NULL;
 

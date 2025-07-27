@@ -17,6 +17,7 @@
 #include "main_rx.h"
 
 #include "PID.h"
+#include "WDT.h"
 
 void buzz_it(uint16_t num, uint16_t delay_time = 500) {
   for (uint16_t i = 0; i < num; i++) {
@@ -47,6 +48,29 @@ bool sensorsReady(){
   return BMP280_read(&bmpData) && MPU6050_read(&mpuData) && QMC5883P_read(&magData);
 }
 
+void watchdogTask(void* parameters) {
+    const TickType_t interval = pdMS_TO_TICKS(500);
+    TickType_t lastWakeTime = xTaskGetTickCount();
+
+    bool healthy;
+
+    for (;;) {
+      if (xSemaphoreTake(watchdogMutex, portMAX_DELAY)){
+        healthy = SAFE_WDT;
+        xSemaphoreGive(watchdogMutex);
+      }
+
+      if (healthy) {
+          IWDG->KR = 0xAAAA;  // Refresh watchdog
+      } else {
+          // Don’t refresh → MCU resets
+      }
+
+      vTaskDelayUntil(&lastWakeTime, interval);
+    }
+}
+
+
 void blinkTask(void *pvParameters) {
   TickType_t interval = pdMS_TO_TICKS(1000); // 500 ms interval
   for(;;){
@@ -64,11 +88,15 @@ void readSensorsTask(void* Parameters) {
   float local_altitude; 
   float ax, ay, az, wx, wy, wz, mx, my, mz; // Madgwick
 
+  bool local_safe_wdt;
+
   for (;;) {
     // read the BMP280 sensor
     if (xSemaphoreTake(wireMutex, portMAX_DELAY)){
       // read MPU6050, BMP280, Magnetometer sensor: 
       if (sensorsReady()) {
+        local_safe_wdt = true;
+
         // Successfully read MPU6050 data
         ax = mpuData.ax;
         ay = mpuData.ay;
@@ -85,9 +113,16 @@ void readSensorsTask(void* Parameters) {
         Serial.println("MPU6050 | COMPASS | BMP280 read failed!");
         local_altitude = 0.0f; // Set to zero if read fails
         buzz_on();
+        local_safe_wdt = false; // FAILSAFE TRIGGER
         while(1);
       }
       xSemaphoreGive(wireMutex);
+    }
+
+    // store the failsafe flag
+    if (xSemaphoreTake(watchdogMutex, portMAX_DELAY)){
+      SAFE_WDT = local_safe_wdt;
+      xSemaphoreGive(watchdogMutex);
     }
 
     // update the Madgwick's data:
@@ -446,6 +481,19 @@ void PIDtask(void* Parameters){
 BaseType_t result;
 void freeRTOS_tasks_init(void){
   result = xTaskCreate(
+    watchdogTask,
+    "Watchdog Task",
+    configMINIMAL_STACK_SIZE,
+    NULL,
+    1,
+    NULL
+  );
+  if (result != pdPASS) {
+    Serial.println("Failed to create the WDT task!");
+    while(1);
+  }
+
+  result = xTaskCreate(
     blinkTask,           // Task function
     "blinkTask",         // Name of the task
     128,                // Stack size in words
@@ -540,3 +588,6 @@ void freeRTOS_tasks_init(void){
   // }
 }
 
+
+
+// Priority tasks are not yet final

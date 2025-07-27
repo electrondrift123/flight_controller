@@ -6,6 +6,8 @@
 #include "shared_data.h"
 #include "buzzer.h"
 
+#include "WDT.h"
+
 void buzzer_init_failed(void){
   int interval = 100; // 500 ms
   Serial.println("Buzzer init failed!");

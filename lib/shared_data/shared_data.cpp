@@ -19,3 +19,5 @@ volatile float loraList[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 volatile float MadgwickSensorList[9] = {0.00f, 0.00f, 0.00f,
                                         0.00f, 0.00f, 0.00f,
                                         0.00f, 0.00f, 0.00f};
+
+volatile bool SAFE_WDT = true;

@@ -20,6 +20,9 @@ extern TaskHandle_t radioTaskHandle;
 // from sensor reading task
 extern SemaphoreHandle_t madgwickMutex;
 
+// for watchdog timer - failsafe
+extern SemaphoreHandle_t watchdogMutex;
+
 // Function to initialize all mutexes
 void mutexes_init(void);
 

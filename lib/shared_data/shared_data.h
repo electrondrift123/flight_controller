@@ -33,4 +33,6 @@ extern volatile float loraList[6]; //[Lat, lon, alt, heading, distance, batt]
 // from sensor reading task
 extern volatile float MadgwickSensorList[9];
 
+extern volatile bool SAFE_WDT;
+
 #endif // SHARED_DATA_H
