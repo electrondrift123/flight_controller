@@ -23,7 +23,7 @@ void setup() {
   Serial.println("Starting setup...");
 
   Wire.begin();
-  Wire.setClock(400000); // Set I2C clock to 400 kHz
+  // Wire.setClock(400000); // Set I2C clock to 400 kHz - if acticve, it causes issues with BMP280
   delay(250);
 
   SPI.begin();
@@ -59,12 +59,16 @@ void loop() {
 
 //// TODO:
 // 1. debug the altitude output of the readSensorsTask
+// 2. add watchdog timer for failsafe
 
 // Note: 
 // - The BMP280 lib is good
-// - The EMA is not the problem
+// - The EMA (Low pass filter) is not the problem
 // - the priority number is not the problem
 // - the stack size is not the problem
 // - the altitude value are way too off
 // - the same library works right on arduino IDE (without freeRTOS)
+
+// Problem:
+// - 400 kHz i2c 
 
