@@ -61,9 +61,14 @@ void watchdogTask(void* parameters) {
       }
 
       if (healthy) {
-          IWDG->KR = 0xAAAA;  // Refresh watchdog
+        IWDG->KR = 0xAAAA;  // Refresh watchdog
       } else {
-          // Don’t refresh → MCU resets
+        if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+          Serial.println("Watchdog timed out");
+          xSemaphoreGive(serialMutex);
+        }
+        buzz_on();
+        // Don’t refresh → MCU resets
       }
 
       vTaskDelayUntil(&lastWakeTime, interval);
@@ -88,7 +93,7 @@ void readSensorsTask(void* Parameters) {
   float local_altitude; 
   float ax, ay, az, wx, wy, wz, mx, my, mz; // Madgwick
 
-  bool local_safe_wdt;
+  bool local_safe_wdt = true;
 
   for (;;) {
     // read the BMP280 sensor
@@ -245,7 +250,6 @@ void PIDtask(void* Parameters){
   static bool motorsEnabled = true;
   static bool altitudeLockSet = false;
 
-
   // EMA filter variables & constants
   static float throttleFiltered = 0.0f;
   static float rollInputFiltered = 0.0f;
@@ -390,10 +394,14 @@ void PIDtask(void* Parameters){
 
     // Debugging output: Temporary -> uncomment it in deployment!
     // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-    //   Serial.print("M1: "); Serial.print(motor1_output); Serial.print(" | ");
-    //   Serial.print("M2: "); Serial.print(motor2_output); Serial.print(" | ");
-    //   Serial.print("M3: "); Serial.print(motor3_output); Serial.print(" | ");
-    //   Serial.print("M4: "); Serial.println(motor4_output);
+    //   // Serial.print("M1: "); Serial.print(motor1_output); Serial.print(" | ");
+    //   // Serial.print("M2: "); Serial.print(motor2_output); Serial.print(" | ");
+    //   // Serial.print("M3: "); Serial.print(motor3_output); Serial.print(" | ");
+    //   // Serial.print("M4: "); Serial.println(motor4_output);
+
+    //   // raw angles: 
+    //   Serial.print("Angles: "); Serial.print(roll); Serial.print(" | ");
+    //   Serial.print(pitch); Serial.print(" | "); Serial.println(yaw);
     //   xSemaphoreGive(serialMutex);
     // }
 
@@ -401,52 +409,52 @@ void PIDtask(void* Parameters){
   }
 }
 
-// // nRF24 RX task
-// //// TODO: test it!!!!
-// void RXtask(void* Parameters){
-//   int16_t telemetry[5] = {0, 0, 0, 0, 0}; // Telemetry data to send back
-//   // temporary for testing: {roll, pitch, yaw, altitude}
-//   for (;;) {
-//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for IRQ
+// nRF24 RX task
+//// TODO: test it!!!!
+void RXtask(void* Parameters){
+  int16_t telemetry[5] = {0, 0, 0, 0, 0}; // Telemetry data to send back
+  // temporary for testing: {roll, pitch, yaw, altitude}
+  for (;;) {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for IRQ
 
-//     uint8_t flags = radio.clearStatusFlags();
+    uint8_t flags = radio.clearStatusFlags();
 
-//     if (flags & RF24_RX_DR) {
-//       while (radio.available()) {
-//         uint8_t len = radio.getDynamicPayloadSize();
-//         char buffer[33] = {0};  // one extra for null-terminator
-//         radio.read(&buffer, len);
+    if (flags & RF24_RX_DR) {
+      while (radio.available()) {
+        uint8_t len = radio.getDynamicPayloadSize();
+        char buffer[33] = {0};  // one extra for null-terminator
+        radio.read(&buffer, len);
 
-//         // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-//         //   Serial.print("[nRF24 RX] Received: ");
-//         //   Serial.println(buffer);
-//         //   xSemaphoreGive(serialMutex);
-//         // }
+        // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+        //   Serial.print("[nRF24 RX] Received: ");
+        //   Serial.println(buffer);
+        //   xSemaphoreGive(serialMutex);
+        // }
 
-//         // use mutex and read the data for telemetry
-//         if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
-//           telemetry[0] = (int16_t) eulerAngles[0]; // roll
-//           telemetry[1] = (int16_t) eulerAngles[1]; // pitch
-//           telemetry[2] = (int16_t) eulerAngles[2]; // yaw
-//           xSemaphoreGive(eulerAnglesMutex);
-//         }
-//         if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
-//           telemetry[3] = (int16_t) loraList[2]; // altitude
-//           xSemaphoreGive(loraMutex);
-//         }
+        // use mutex and read the data for telemetry
+        if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
+          telemetry[0] = (int16_t) eulerAngles[0]; // roll
+          telemetry[1] = (int16_t) eulerAngles[1]; // pitch
+          telemetry[2] = (int16_t) eulerAngles[2]; // yaw
+          xSemaphoreGive(eulerAnglesMutex);
+        }
+        if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
+          telemetry[3] = (int16_t) loraList[2]; // altitude
+          xSemaphoreGive(loraMutex);
+        }
         
-//         // Send as ACK payload
-//         radio.writeAckPayload(PIPE_INDEX, telemetry, sizeof(telemetry));
+        // Send as ACK payload
+        radio.writeAckPayload(PIPE_INDEX, telemetry, sizeof(telemetry));
 
-//         //// TODO: process the received data:
-//       }
-//     }
+        //// TODO: process the received data:
+      }
+    }
 
-//     if (flags & RF24_TX_DF) {
-//       radio.flush_tx(); // not used on RX-only but good practice
-//     }
-//   }
-// }
+    if (flags & RF24_TX_DF) {
+      radio.flush_tx(); // not used on RX-only but good practice
+    }
+  }
+}
 
 // // //// TODO: implement
 // // void loraTXtask(void* Parameters){
@@ -458,45 +466,45 @@ void PIDtask(void* Parameters){
 // //   }
 // // }
 
-// //// TODO: find ADC pin for this task
-// void batteryMonitorTask(void* Parameters){
-//   TickType_t interval = pdMS_TO_TICKS(4000);
-//   // TickType_t lastWakeTime = x
-//   float batteryVoltage; // Variable to hold battery voltage
+//// TODO: find ADC pin for this task
+void batteryMonitorTask(void* Parameters){
+  TickType_t interval = pdMS_TO_TICKS(4000);
+  // TickType_t lastWakeTime = x
+  float batteryVoltage; // Variable to hold battery voltage
 
-//   for (;;){
-//     // Read battery voltage
+  for (;;){
+    // Read battery voltage
 
-//     // Update shared data
-//     if (xSemaphoreTake(loraMutex, portMAX_DELAY)) {
-//       loraList[5] = batteryVoltage; // Update battery voltage in loraList
-//       xSemaphoreGive(loraMutex);
-//     }
+    // Update shared data
+    if (xSemaphoreTake(loraMutex, portMAX_DELAY)) {
+      loraList[5] = batteryVoltage; // Update battery voltage in loraList
+      xSemaphoreGive(loraMutex);
+    }
     
-//     vTaskDelay(interval);
-//   }
-// }
+    vTaskDelay(interval);
+  }
+}
 
 ////////// freeRTOS INIT
 BaseType_t result;
 void freeRTOS_tasks_init(void){
-  result = xTaskCreate(
-    watchdogTask,
-    "Watchdog Task",
-    configMINIMAL_STACK_SIZE,
-    NULL,
-    1,
-    NULL
-  );
-  if (result != pdPASS) {
-    Serial.println("Failed to create the WDT task!");
-    while(1);
-  }
+  // result = xTaskCreate(
+  //   watchdogTask,
+  //   "Watchdog Task",
+  //   configMINIMAL_STACK_SIZE,
+  //   NULL,
+  //   1,
+  //   NULL
+  // );
+  // if (result != pdPASS) {
+  //   Serial.println("Failed to create the WDT task!");
+  //   while(1);
+  // }
 
   result = xTaskCreate(
     blinkTask,           // Task function
     "blinkTask",         // Name of the task
-    128,                // Stack size in words
+    64,                // Stack size in words
     NULL,                // Task input parameter
     1,                   // Priority
     NULL                 // Task handle
@@ -521,34 +529,34 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
-  // sensors data reading task
-  result = xTaskCreate(
-    MadgwickTask,
-    "MadgwickTask", // Task name
-    256,               // Stack size in words
-    NULL,
-    1,                 // Task priority
-    NULL               // Task handle
-  );
-  if (result != pdPASS) {
-    // Handle task creation failure
-    Serial.println("Failed to create MadgwickTask");
-    while (1); // Infinite loop to indicate failure
-  }
+  // // sensors data reading task
+  // result = xTaskCreate(
+  //   MadgwickTask,
+  //   "MadgwickTask", // Task name
+  //   256,               // Stack size in words
+  //   NULL,
+  //   1,                 // Task priority
+  //   NULL               // Task handle
+  // );
+  // if (result != pdPASS) {
+  //   // Handle task creation failure
+  //   Serial.println("Failed to create MadgwickTask");
+  //   while (1); // Infinite loop to indicate failure
+  // }
 
-  result = xTaskCreate(
-    PIDtask,
-    "PID task",
-    256,
-    NULL,
-    1,
-    NULL
-  );
-  if (result != pdPASS) {
-    // Handle task creation failure
-    Serial.println("Failed to create PIDtask");
-    while (1); // Infinite loop to indicate failure
-  }
+  // result = xTaskCreate(
+  //   PIDtask,
+  //   "PID task",
+  //   256,
+  //   NULL,
+  //   1,
+  //   NULL
+  // );
+  // if (result != pdPASS) {
+  //   // Handle task creation failure
+  //   Serial.println("Failed to create PIDtask");
+  //   while (1); // Infinite loop to indicate failure
+  // }
 
   // result = xTaskCreate(
   //   RXtask,

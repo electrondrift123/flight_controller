@@ -29,7 +29,6 @@ void setup() {
   SPI.begin();
   delay(250);
 
-  IWDG_Init(); // watchdogtimer initialization for failsafes
   sensors_init(); // the sensors initialization 
   used_gpio_init(); // Initialize GPIOs (buzzer, motors, blink)
   mutexes_init(); // Initialize mutexes
@@ -41,6 +40,8 @@ void setup() {
   initPID(&pidPitch, 1.0f, 0.0f, 0.0f, -200.0f, 200.0f, 100.0f);
   initPID(&pidYaw,   1.0f, 0.0f, 0.0f, -200.0f, 200.0f, 100.0f);
   initPID(&pidThrottle,   1.0f, 0.0f, 0.0f, 1000.0f, 2000.0f, 100.0f);
+
+  // IWDG_Init(); // watchdogtimer initialization for failsafes
 
   // interrupts();
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
