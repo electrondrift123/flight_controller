@@ -42,6 +42,7 @@ void setup() {
   initPID(&pidThrottle,   1.0f, 0.0f, 0.0f, 1000.0f, 2000.0f, 100.0f);
 
   // IWDG_Init(); // watchdogtimer initialization for failsafes
+  // Serial.println("WDT init success!");
 
   // interrupts();
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
@@ -59,17 +60,11 @@ void loop() {
 
 
 //// TODO:
-// 1. debug the altitude output of the readSensorsTask
-// 2. add watchdog timer for failsafe
+// 1. debug watchdog timer for failsafe
 
 // Note: 
-// - The BMP280 lib is good
-// - The EMA (Low pass filter) is not the problem
-// - the priority number is not the problem
-// - the stack size is not the problem
-// - the altitude value are way too off
-// - the same library works right on arduino IDE (without freeRTOS)
+// - The 
 
 // Problem:
-// - 400 kHz i2c 
+
 

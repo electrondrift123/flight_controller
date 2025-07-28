@@ -49,30 +49,36 @@ bool sensorsReady(){
 }
 
 void watchdogTask(void* parameters) {
-    const TickType_t interval = pdMS_TO_TICKS(500);
-    TickType_t lastWakeTime = xTaskGetTickCount();
+  IWDG_Init(); // watchdogtimer initialization for failsafes
+  Serial.println("WDT init success!");
 
-    bool healthy;
+  // vTaskDelay(pdMS_TO_TICKS(2000));  // Let sensor task run first
 
-    for (;;) {
-      if (xSemaphoreTake(watchdogMutex, portMAX_DELAY)){
-        healthy = SAFE_WDT;
-        xSemaphoreGive(watchdogMutex);
-      }
+  const TickType_t interval = pdMS_TO_TICKS(500);
+  TickType_t lastWakeTime = xTaskGetTickCount();
 
-      if (healthy) {
-        IWDG->KR = 0xAAAA;  // Refresh watchdog
-      } else {
-        if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-          Serial.println("Watchdog timed out");
-          xSemaphoreGive(serialMutex);
-        }
-        buzz_on();
-        // Don’t refresh → MCU resets
-      }
+  bool healthy = true;
 
-      vTaskDelayUntil(&lastWakeTime, interval);
+  for (;;) {
+    if (xSemaphoreTake(watchdogMutex, portMAX_DELAY)){
+      healthy = SAFE_WDT;
+      SAFE_WDT = false;  // Clear after reading
+      xSemaphoreGive(watchdogMutex);
     }
+
+    if (healthy) {
+      IWDG->KR = 0xAAAA;  // Refresh watchdog
+    } else {
+      if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+        Serial.println("Watchdog timed out");
+        xSemaphoreGive(serialMutex);
+      }
+      buzz_on();
+      // Don’t refresh → MCU resets
+    }
+
+    vTaskDelayUntil(&lastWakeTime, interval);
+  }
 }
 
 
@@ -119,7 +125,7 @@ void readSensorsTask(void* Parameters) {
         local_altitude = 0.0f; // Set to zero if read fails
         buzz_on();
         local_safe_wdt = false; // FAILSAFE TRIGGER
-        while(1);
+        // while(1);
       }
       xSemaphoreGive(wireMutex);
     }
@@ -488,18 +494,18 @@ void batteryMonitorTask(void* Parameters){
 ////////// freeRTOS INIT
 BaseType_t result;
 void freeRTOS_tasks_init(void){
-  // result = xTaskCreate(
-  //   watchdogTask,
-  //   "Watchdog Task",
-  //   configMINIMAL_STACK_SIZE,
-  //   NULL,
-  //   1,
-  //   NULL
-  // );
-  // if (result != pdPASS) {
-  //   Serial.println("Failed to create the WDT task!");
-  //   while(1);
-  // }
+  result = xTaskCreate(
+    watchdogTask,
+    "Watchdog Task",
+    configMINIMAL_STACK_SIZE,
+    NULL,
+    1,
+    NULL
+  );
+  if (result != pdPASS) {
+    Serial.println("Failed to create the WDT task!");
+    while(1);
+  }
 
   result = xTaskCreate(
     blinkTask,           // Task function
