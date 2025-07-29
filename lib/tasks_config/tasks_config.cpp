@@ -69,7 +69,7 @@ void watchdogTask(void* parameters) {
     }
 
     if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-      Serial.print("WDT_flag: "); Serial.println(SAFE_WDT);
+      Serial.print("WDT_flag: "); Serial.println(WDT_isSafe());
       xSemaphoreGive(serialMutex);
     }
 
@@ -95,14 +95,12 @@ void readSensorsTask(void* Parameters) {
   float local_altitude; 
   float ax, ay, az, wx, wy, wz, mx, my, mz; // Madgwick
 
-  bool local_safe_wdt = true;
-
   for (;;) {
     // read the BMP280 sensor
     if (xSemaphoreTake(wireMutex, portMAX_DELAY)){
       // read MPU6050, BMP280, Magnetometer sensor: 
       if (sensorsReady()) {
-        local_safe_wdt = true;
+        WDT_setSafe(true);
 
         // Successfully read MPU6050 data
         ax = mpuData.ax;
@@ -118,17 +116,14 @@ void readSensorsTask(void* Parameters) {
         local_altitude = bmpData.altitude; // Store altitude locally
       }else {
         Serial.println("MPU6050 | COMPASS | BMP280 read failed!");
-        local_altitude = 0.0f; // Set to zero if read fails
+        // local_altitude = 0.0f; // Set to zero if read fails
         buzz_on();
-        local_safe_wdt = false; // FAILSAFE TRIGGER
-        // while(1);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        buzz_off();
+        WDT_setSafe(false);
       }
       xSemaphoreGive(wireMutex);
     }
-
-    // Update the watchdog timer
-    WDT_setSafe(local_safe_wdt);
-
 
     // update the Madgwick's data:
     if (xSemaphoreTake(madgwickMutex, portMAX_DELAY)){
