@@ -18,8 +18,8 @@
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial);
-  // delay(250);
+  // while (!Serial);
+  delay(250);
   Serial.println("Starting setup...");
 
   Wire.begin();
@@ -41,12 +41,11 @@ void setup() {
   initPID(&pidYaw,   1.0f, 0.0f, 0.0f, -200.0f, 200.0f, 100.0f);
   initPID(&pidThrottle,   1.0f, 0.0f, 0.0f, 1000.0f, 2000.0f, 100.0f);
 
-  // IWDG_Init(); // watchdogtimer initialization for failsafes
-  // Serial.println("WDT init success!");
 
   // interrupts();
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
   Serial.println("FreeRTOS tasks initialized!");
+
   buzz_on();
   delay(200);
   buzz_off();
@@ -63,8 +62,10 @@ void loop() {
 // 1. debug watchdog timer for failsafe
 
 // Note: 
-// - The 
+// - The task are not the problem
+// - all tasks are working before i added WDT
+// - the MCU resets after 1-2 seconds after WDT is enabled
 
-// Problem:
+
 
 

@@ -3,6 +3,8 @@
 
 void IWDG_Init(void);
 
-void WDT_reset(void);
+void WDT_setSafe(bool state);
+bool WDT_isSafe();
+
 
 #endif // WTD_H

@@ -58,4 +58,6 @@ void mutexes_init(void){
     Serial.println("Failed to create Madgwick mutex!");
     while (1); // halt or retry
   }
+
+  Serial.println("mutex init success!");
 }

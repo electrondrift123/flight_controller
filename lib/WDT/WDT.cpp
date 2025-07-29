@@ -13,7 +13,7 @@ void IWDG_Init(void) {
     // Set reload value (max 0x0FFF) → how long until reset
     // Timeout = (reload + 1) * prescaler / LSI
     // Ex: ~1s = (1000 * 64) / 32000
-    IWDG->RLR = 1000;
+    IWDG->RLR = 199;
 
     // Reload the counter
     IWDG->KR = 0xAAAA;
@@ -22,9 +22,16 @@ void IWDG_Init(void) {
     IWDG->KR = 0xCCCC;
 }
 
-void WDT_reset(void){
-    if (xSemaphoreTake(watchdogMutex, portMAX_DELAY)){
-        SAFE_WDT = false;
-        xSemaphoreGive(watchdogMutex);
-    }
+void WDT_setSafe(bool state) {
+    taskENTER_CRITICAL();
+    SAFE_WDT = state;
+    taskEXIT_CRITICAL();
+}
+
+bool WDT_isSafe() {
+    bool value;
+    taskENTER_CRITICAL();
+    value = SAFE_WDT;
+    taskEXIT_CRITICAL();
+    return value;
 }

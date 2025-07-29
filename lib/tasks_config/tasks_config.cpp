@@ -49,32 +49,28 @@ bool sensorsReady(){
 }
 
 void watchdogTask(void* parameters) {
+  vTaskDelay(pdMS_TO_TICKS(1000));
   IWDG_Init(); // watchdogtimer initialization for failsafes
   Serial.println("WDT init success!");
 
-  // vTaskDelay(pdMS_TO_TICKS(2000));  // Let sensor task run first
-
-  const TickType_t interval = pdMS_TO_TICKS(500);
+  const TickType_t interval = pdMS_TO_TICKS(200);
   TickType_t lastWakeTime = xTaskGetTickCount();
 
-  bool healthy = true;
-
   for (;;) {
-    if (xSemaphoreTake(watchdogMutex, portMAX_DELAY)){
-      healthy = SAFE_WDT;
-      SAFE_WDT = false;  // Clear after reading
-      xSemaphoreGive(watchdogMutex);
-    }
-
-    if (healthy) {
+    if (WDT_isSafe()) {
       IWDG->KR = 0xAAAA;  // Refresh watchdog
-    } else {
+    } else { 
+      // Don’t refresh → MCU resets
       if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
         Serial.println("Watchdog timed out");
         xSemaphoreGive(serialMutex);
       }
       buzz_on();
-      // Don’t refresh → MCU resets
+    }
+
+    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+      Serial.print("WDT_flag: "); Serial.println(SAFE_WDT);
+      xSemaphoreGive(serialMutex);
     }
 
     vTaskDelayUntil(&lastWakeTime, interval);
@@ -130,11 +126,9 @@ void readSensorsTask(void* Parameters) {
       xSemaphoreGive(wireMutex);
     }
 
-    // store the failsafe flag
-    if (xSemaphoreTake(watchdogMutex, portMAX_DELAY)){
-      SAFE_WDT = local_safe_wdt;
-      xSemaphoreGive(watchdogMutex);
-    }
+    // Update the watchdog timer
+    WDT_setSafe(local_safe_wdt);
+
 
     // update the Madgwick's data:
     if (xSemaphoreTake(madgwickMutex, portMAX_DELAY)){
@@ -497,7 +491,7 @@ void freeRTOS_tasks_init(void){
   result = xTaskCreate(
     watchdogTask,
     "Watchdog Task",
-    configMINIMAL_STACK_SIZE,
+    128,
     NULL,
     1,
     NULL
