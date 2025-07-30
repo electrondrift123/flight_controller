@@ -68,10 +68,11 @@ void watchdogTask(void* parameters) {
       buzz_on();
     }
 
-    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-      Serial.print("WDT_flag: "); Serial.println(WDT_isSafe());
-      xSemaphoreGive(serialMutex);
-    }
+    // debug print
+    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+    //   Serial.print("WDT_flag: "); Serial.println(WDT_isSafe());
+    //   xSemaphoreGive(serialMutex);
+    // }
 
     vTaskDelayUntil(&lastWakeTime, interval);
   }
@@ -115,8 +116,10 @@ void readSensorsTask(void* Parameters) {
 
         local_altitude = bmpData.altitude; // Store altitude locally
       }else {
-        Serial.println("MPU6050 | COMPASS | BMP280 read failed!");
-        // local_altitude = 0.0f; // Set to zero if read fails
+        if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+          Serial.println("Error reading sensors");
+        }
+        local_altitude = 0.0f; // Set to zero if read fails
         buzz_on();
         vTaskDelay(pdMS_TO_TICKS(100));
         buzz_off();
@@ -146,15 +149,15 @@ void readSensorsTask(void* Parameters) {
     }
 
     // debug printf
-    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-      // Serial.print("Euler: ");
-      // Serial.print(madData.roll); Serial.print(", ");
-      // Serial.print(madData.pitch); Serial.print(", ");
-      // Serial.println(madData.yaw);
+    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+    //   // Serial.print("Euler: ");
+    //   // Serial.print(madData.roll); Serial.print(", ");
+    //   // Serial.print(madData.pitch); Serial.print(", ");
+    //   // Serial.println(madData.yaw);
 
-      Serial.print("Altitude: "); Serial.println(local_altitude);
-      xSemaphoreGive(serialMutex);
-    }
+    //   Serial.print("Altitude: "); Serial.println(local_altitude);
+    //   xSemaphoreGive(serialMutex);
+    // }
 
     vTaskDelayUntil(&lastWakeTime, intervalTicks); 
   }
@@ -206,7 +209,7 @@ void MadgwickTask(void* Parameters) {
         xSemaphoreGive(eulerAnglesMutex);
       }
 
-
+      //// Print debug
       // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
       //   Serial.print("Euler: ");
       //   Serial.print(madData.roll); Serial.print(", ");
@@ -225,9 +228,7 @@ void MadgwickTask(void* Parameters) {
       //   // Serial.print(my); Serial.print(", "); Serial.println(mz);
       //   xSemaphoreGive(serialMutex);
       // }
-      
     }
-    // a slight delay
     vTaskDelayUntil(&lastWakeTime, intervalTicks);
   }
 }
@@ -246,7 +247,7 @@ void PIDtask(void* Parameters){
   static bool altitudeLockSet = false;
 
   // EMA filter variables & constants
-  static float throttleFiltered = 0.0f;
+  static float throttleFiltered = 1000.0f;
   static float rollInputFiltered = 0.0f;
   static float pitchInputFiltered = 0.0f;
   static float yawInputFiltered = 0.0f;
@@ -369,6 +370,7 @@ void PIDtask(void* Parameters){
     float motor4_output = throttleFiltered - roll_correction - pitch_correction + yaw_correction; // Back Right
     
     // Failsafe & Limit motor outputs to the range [1000, 2000]:
+    // Disable PID correction when throttle is low and drone is likely landed:
     if (!ALT_H && throttleFiltered < 1050.0f) {
       resetPID(&pidRoll);
       resetPID(&pidPitch);
@@ -388,17 +390,22 @@ void PIDtask(void* Parameters){
     TIM2->CCR4 = motor4_output; // TIM2_CH4
 
     // Debugging output: Temporary -> uncomment it in deployment!
-    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-    //   // Serial.print("M1: "); Serial.print(motor1_output); Serial.print(" | ");
-    //   // Serial.print("M2: "); Serial.print(motor2_output); Serial.print(" | ");
-    //   // Serial.print("M3: "); Serial.print(motor3_output); Serial.print(" | ");
-    //   // Serial.print("M4: "); Serial.println(motor4_output);
+    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+      Serial.print("M1: "); Serial.print(motor1_output); Serial.print(" | ");
+      Serial.print("M2: "); Serial.print(motor2_output); Serial.print(" | ");
+      Serial.print("M3: "); Serial.print(motor3_output); Serial.print(" | ");
+      Serial.print("M4: "); Serial.println(motor4_output);
 
-    //   // raw angles: 
-    //   Serial.print("Angles: "); Serial.print(roll); Serial.print(" | ");
-    //   Serial.print(pitch); Serial.print(" | "); Serial.println(yaw);
-    //   xSemaphoreGive(serialMutex);
-    // }
+      //// raw angles: 
+      // Serial.print("Angles: "); Serial.print(roll); Serial.print(" | ");
+      // Serial.print(pitch); Serial.print(" | "); Serial.println(yaw);
+
+      //// Corrected Angles
+      // Serial.print("Corrected: "); Serial.print(roll_correction); Serial.print(", ");
+      // Serial.print(pitch_correction); Serial.print(", "); Serial.println(yaw_correction);
+
+      xSemaphoreGive(serialMutex);
+    }
 
     vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
@@ -486,7 +493,7 @@ void freeRTOS_tasks_init(void){
   result = xTaskCreate(
     watchdogTask,
     "Watchdog Task",
-    128,
+    64,
     NULL,
     1,
     NULL
@@ -513,7 +520,7 @@ void freeRTOS_tasks_init(void){
   result = xTaskCreate(
     readSensorsTask,
     "read Sensors Task",
-    256, // Stack size in words
+    128, // Stack size in words
     NULL,
     1,
     NULL
@@ -524,34 +531,34 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
-  // // sensors data reading task
-  // result = xTaskCreate(
-  //   MadgwickTask,
-  //   "MadgwickTask", // Task name
-  //   256,               // Stack size in words
-  //   NULL,
-  //   1,                 // Task priority
-  //   NULL               // Task handle
-  // );
-  // if (result != pdPASS) {
-  //   // Handle task creation failure
-  //   Serial.println("Failed to create MadgwickTask");
-  //   while (1); // Infinite loop to indicate failure
-  // }
+  // sensors data reading task
+  result = xTaskCreate(
+    MadgwickTask,
+    "MadgwickTask", // Task name
+    256,               // Stack size in words
+    NULL,
+    1,                 // Task priority
+    NULL               // Task handle
+  );
+  if (result != pdPASS) {
+    // Handle task creation failure
+    Serial.println("Failed to create MadgwickTask");
+    while (1); // Infinite loop to indicate failure
+  }
 
-  // result = xTaskCreate(
-  //   PIDtask,
-  //   "PID task",
-  //   256,
-  //   NULL,
-  //   1,
-  //   NULL
-  // );
-  // if (result != pdPASS) {
-  //   // Handle task creation failure
-  //   Serial.println("Failed to create PIDtask");
-  //   while (1); // Infinite loop to indicate failure
-  // }
+  result = xTaskCreate(
+    PIDtask,
+    "PID task",
+    256,
+    NULL,
+    1,
+    NULL
+  );
+  if (result != pdPASS) {
+    // Handle task creation failure
+    Serial.println("Failed to create PIDtask");
+    while (1); // Infinite loop to indicate failure
+  }
 
   // result = xTaskCreate(
   //   RXtask,

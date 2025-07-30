@@ -59,12 +59,10 @@ void loop() {
 
 
 //// TODO:
-// 1. debug watchdog timer for failsafe
+// 1. debug the PID logic
 
 // Note: 
-// - The task are not the problem
-// - all tasks are working before i added WDT
-// - the MCU resets after 1-2 seconds after WDT is enabled
+// - The output ticks for every motor is 1ms
 
 
 
