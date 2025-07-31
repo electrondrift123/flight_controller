@@ -148,14 +148,14 @@ void readSensorsTask(void* Parameters) {
       xSemaphoreGive(loraMutex);
     }
 
-    // debug printf
+    //// debug printf
     // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-    //   // Serial.print("Euler: ");
-    //   // Serial.print(madData.roll); Serial.print(", ");
-    //   // Serial.print(madData.pitch); Serial.print(", ");
-    //   // Serial.println(madData.yaw);
+    //   Serial.print("Euler: ");
+    //   Serial.print(madData.roll); Serial.print(", ");
+    //   Serial.print(madData.pitch); Serial.print(", ");
+    //   Serial.println(madData.yaw);
 
-    //   Serial.print("Altitude: "); Serial.println(local_altitude);
+    //   // Serial.print("Altitude: "); Serial.println(local_altitude);
     //   xSemaphoreGive(serialMutex);
     // }
 
@@ -390,22 +390,22 @@ void PIDtask(void* Parameters){
     TIM2->CCR4 = motor4_output; // TIM2_CH4
 
     // Debugging output: Temporary -> uncomment it in deployment!
-    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-      Serial.print("M1: "); Serial.print(motor1_output); Serial.print(" | ");
-      Serial.print("M2: "); Serial.print(motor2_output); Serial.print(" | ");
-      Serial.print("M3: "); Serial.print(motor3_output); Serial.print(" | ");
-      Serial.print("M4: "); Serial.println(motor4_output);
+    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+    //   Serial.print("M1: "); Serial.print(motor1_output); Serial.print(" | ");
+    //   Serial.print("M2: "); Serial.print(motor2_output); Serial.print(" | ");
+    //   Serial.print("M3: "); Serial.print(motor3_output); Serial.print(" | ");
+    //   Serial.print("M4: "); Serial.println(motor4_output);
 
-      //// raw angles: 
-      // Serial.print("Angles: "); Serial.print(roll); Serial.print(" | ");
-      // Serial.print(pitch); Serial.print(" | "); Serial.println(yaw);
+    //   //// raw angles: 
+    //   // Serial.print("Angles: "); Serial.print(roll); Serial.print(" | ");
+    //   // Serial.print(pitch); Serial.print(" | "); Serial.println(yaw);
 
-      //// Corrected Angles
-      // Serial.print("Corrected: "); Serial.print(roll_correction); Serial.print(", ");
-      // Serial.print(pitch_correction); Serial.print(", "); Serial.println(yaw_correction);
+    //   //// Corrected Angles
+    //   // Serial.print("Corrected: "); Serial.print(roll_correction); Serial.print(", ");
+    //   // Serial.print(pitch_correction); Serial.print(", "); Serial.println(yaw_correction);
 
-      xSemaphoreGive(serialMutex);
-    }
+    //   xSemaphoreGive(serialMutex);
+    // }
 
     vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
@@ -427,11 +427,11 @@ void RXtask(void* Parameters){
         char buffer[33] = {0};  // one extra for null-terminator
         radio.read(&buffer, len);
 
-        // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-        //   Serial.print("[nRF24 RX] Received: ");
-        //   Serial.println(buffer);
-        //   xSemaphoreGive(serialMutex);
-        // }
+        if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+          Serial.print("[nRF24 RX] Received: ");
+          Serial.println(buffer);
+          xSemaphoreGive(serialMutex);
+        }
 
         // use mutex and read the data for telemetry
         if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
@@ -560,19 +560,19 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
-  // result = xTaskCreate(
-  //   RXtask,
-  //   "nRF24 RX task",
-  //   256,
-  //   NULL,
-  //   1,
-  //   &radioTaskHandle
-  // );
-  // if (result != pdPASS) {
-  //   // Handle task creation failure
-  //   Serial.println("Failed to create RXtask");
-  //   while (1); // Infinite loop to indicate failure
-  // }
+  result = xTaskCreate(
+    RXtask,
+    "nRF24 RX task",
+    256,
+    NULL,
+    1,
+    &radioTaskHandle
+  );
+  if (result != pdPASS) {
+    // Handle task creation failure
+    Serial.println("Failed to create RXtask");
+    while (1); // Infinite loop to indicate failure
+  }
 
   // // xTaskCreate(
   // //   loraTXtask,
@@ -600,4 +600,4 @@ void freeRTOS_tasks_init(void){
 
 
 
-// Priority tasks are not yet final
+// Priority tasks are all set to 1 

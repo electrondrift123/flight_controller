@@ -32,7 +32,7 @@ void setup() {
   sensors_init(); // the sensors initialization 
   used_gpio_init(); // Initialize GPIOs (buzzer, motors, blink)
   mutexes_init(); // Initialize mutexes
-  // main_rx_init(); // Initialize nRF24 radio
+  main_rx_init(); // Initialize nRF24 radio
  
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!
