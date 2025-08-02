@@ -18,8 +18,8 @@
 
 void setup() {
   Serial.begin(115200);
-  // while (!Serial);
-  delay(250);
+  while (!Serial);
+  // delay(250);
   Serial.println("Starting setup...");
 
   Wire.begin();
@@ -32,7 +32,11 @@ void setup() {
   sensors_init(); // the sensors initialization 
   used_gpio_init(); // Initialize GPIOs (buzzer, motors, blink)
   mutexes_init(); // Initialize mutexes
-  main_rx_init(); // Initialize nRF24 radio
+  if (!main_rx_init()){
+    Serial.println("Error initializing main_rx");
+    buzz_on();
+    while (1);
+  } // Initialize nRF24 radio
  
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!
