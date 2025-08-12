@@ -18,8 +18,8 @@
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial);
-  // delay(250);
+  // while (!Serial);
+  delay(250);
   Serial.println("Starting setup...");
 
   Wire.begin();

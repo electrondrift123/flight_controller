@@ -415,7 +415,7 @@ void PIDtask(void* Parameters){
 //// TODO: test it!!!!
 void RXtask(void* Parameters){
   int16_t telemetry[5] = {0, 0, 0, 0, 0}; // Telemetry data to send back
-  // temporary for testing: {roll, pitch, yaw, altitude}
+  // temporary for testing: {roll, pitch, yaw, altitude, radio_state}
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for IRQ
 
@@ -423,15 +423,16 @@ void RXtask(void* Parameters){
 
     if (flags & RF24_RX_DR) {
       while (radio.available()) {
+        telemetry[4] = 1; // 1 = connected
         uint8_t len = radio.getDynamicPayloadSize();
         char buffer[33] = {0};  // one extra for null-terminator
-        radio.read(&buffer, len);
+        // radio.read(&buffer, len);
 
-        if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-          Serial.print("[nRF24 RX] Received: ");
-          Serial.println(buffer);
-          xSemaphoreGive(serialMutex);
-        }
+        // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+        //   Serial.print("[nRF24 RX] Received: ");
+        //   Serial.println(buffer);
+        //   xSemaphoreGive(serialMutex);
+        // }
 
         // use mutex and read the data for telemetry
         if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
@@ -447,6 +448,19 @@ void RXtask(void* Parameters){
         
         // Send as ACK payload
         radio.writeAckPayload(PIPE_INDEX, telemetry, sizeof(telemetry));
+
+        radio.read(&buffer, len);
+
+        if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+          Serial.print("[nRF24 RX] Received: ");
+          Serial.println(buffer);
+          xSemaphoreGive(serialMutex);
+        }
+
+        buzz_on();
+        vTaskDelay(pdMS_TO_TICKS(10));
+        buzz_off();
+
 
         //// TODO: process the received data:
       }
