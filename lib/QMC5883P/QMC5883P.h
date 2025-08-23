@@ -6,9 +6,10 @@
 #define QMC5883P_ADDR 0x2C
 
 // Not yet tried mounted on drone
-static float minX = 1523, maxX = 2233; 
-static float minY = 1224, maxY = 1735; 
-static float minZ = 5350, maxZ = 6200; 
+// USE THE ARDUINO SKETCH I MADE FOR RECALIBRATION
+static float minX = 945, maxX = 1650; 
+static float minY = 620, maxY = 1250; 
+static float minZ = 5120, maxZ = 5845; 
 
 typedef struct {
   float mx, my, mz;

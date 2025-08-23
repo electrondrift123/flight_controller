@@ -25,9 +25,11 @@ void setup() {
   Wire.begin();
   // Wire.setClock(400000); // Set I2C clock to 400 kHz - if acticve, it causes issues with BMP280
   delay(250);
+  Serial.println("i2c ready!");
 
   SPI.begin();
   delay(250);
+  Serial.println("SPI ready!");
 
   sensors_init(); // the sensors initialization 
   used_gpio_init(); // Initialize GPIOs (buzzer, motors, blink)

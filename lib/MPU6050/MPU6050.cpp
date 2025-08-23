@@ -8,25 +8,21 @@ bool MPU6050_init(void) {
   Wire.write(0x6B); // Power management
   Wire.write(0x00);
   if (Wire.endTransmission() != 0) return false;
-
   // Low-pass filter config
   Wire.beginTransmission(MPU6050_ADDR);
   Wire.write(0x1A);
   Wire.write(0x05); // 0x01 for faster response
   if (Wire.endTransmission() != 0) return false;
-
   // Accelerometer config (+/- 8g)
   Wire.beginTransmission(MPU6050_ADDR);
   Wire.write(0x1C);
   Wire.write(0x10);
   if (Wire.endTransmission() != 0) return false;
-
   // Gyroscope config (+/- 500 deg/s)
   Wire.beginTransmission(MPU6050_ADDR);
   Wire.write(0x1B);
   Wire.write(0x08);
   if (Wire.endTransmission() != 0) return false;
-
   return true;
 }
 

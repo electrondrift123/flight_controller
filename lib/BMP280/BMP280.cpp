@@ -123,7 +123,6 @@ bool BMP280_init(void) {
   // Check if calibration registers are readable
   if (!i2c_available(0x88, 24)) return false;  // calibration block
   if (!i2c_available(0xF7, 6)) return false;   // pressure/temp block
-
   write8(0xF4, 0x27); // ctrl_meas
   write8(0xF5, 0xA0); // config
 

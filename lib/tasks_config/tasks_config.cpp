@@ -148,14 +148,14 @@ void readSensorsTask(void* Parameters) {
       xSemaphoreGive(loraMutex);
     }
 
-    //// debug printf
+    // // debug printf
     // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
     //   Serial.print("Euler: ");
     //   Serial.print(madData.roll); Serial.print(", ");
     //   Serial.print(madData.pitch); Serial.print(", ");
     //   Serial.println(madData.yaw);
 
-    //   // Serial.print("Altitude: "); Serial.println(local_altitude);
+    //   Serial.print("Altitude: "); Serial.println(local_altitude);
     //   xSemaphoreGive(serialMutex);
     // }
 
@@ -384,13 +384,24 @@ void PIDtask(void* Parameters){
     }
 
     // Motor Output:
-    TIM2->CCR1 = motor1_output; // TIM2_CH1
-    TIM2->CCR2 = motor2_output; // TIM2_CH2
-    TIM2->CCR3 = motor3_output; // TIM2_CH3
-    TIM2->CCR4 = motor4_output; // TIM2_CH4
+    TIM2->CCR1 = (uint16_t)motor1_output;
+    TIM2->CCR2 = (uint16_t)motor2_output;
+    TIM2->CCR3 = (uint16_t)motor3_output;
+    TIM2->CCR4 = (uint16_t)motor4_output;
+
 
     // Debugging output: Temporary -> uncomment it in deployment!
-    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+
+    // PID tuning Starts (FC only)
+    // roll: [setpoint, actual, correction, current time in ms, P_val]
+    Serial.print("0"); Serial.print(", ");
+    Serial.print(roll); Serial.print(", "); 
+    Serial.print(roll_correction); Serial.print(", ");
+    Serial.print(currentTime * portTICK_PERIOD_MS / 1000.0f); Serial.print(", ");
+    Serial.println("1.00");
+    // PID tuning Ends 
+
     //   Serial.print("M1: "); Serial.print(motor1_output); Serial.print(" | ");
     //   Serial.print("M2: "); Serial.print(motor2_output); Serial.print(" | ");
     //   Serial.print("M3: "); Serial.print(motor3_output); Serial.print(" | ");
@@ -404,12 +415,42 @@ void PIDtask(void* Parameters){
     //   // Serial.print("Corrected: "); Serial.print(roll_correction); Serial.print(", ");
     //   // Serial.print(pitch_correction); Serial.print(", "); Serial.println(yaw_correction);
 
-    //   xSemaphoreGive(serialMutex);
-    // }
+      xSemaphoreGive(serialMutex);
+    }
 
     vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
 }
+
+// motor tester task
+void MotorTest(void *Parameters){
+  // Hold min for arming
+  TIM2->CCR1 = 1000;
+  TIM2->CCR2 = 1000;
+  TIM2->CCR3 = 1000;
+  TIM2->CCR4 = 1000;
+  vTaskDelay(pdMS_TO_TICKS(3000));   // wait for the beeps to finish
+
+  for(;;){
+    for (int i = 0; i <= 300; i++){
+      TIM2->CCR1 = 1200 + i;
+      TIM2->CCR2 = 1200 + i;
+      TIM2->CCR3 = 1200 + i;
+      TIM2->CCR4 = 1200 + i;
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    for (int i = 300; i >= 0; i--){
+      TIM2->CCR1 = 1500 - i;
+      TIM2->CCR2 = 1500 - i;
+      TIM2->CCR3 = 1500 - i;
+      TIM2->CCR4 = 1500 - i;
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+}
+
 
 // nRF24 RX task
 //// TODO: test it!!!!
@@ -426,13 +467,6 @@ void RXtask(void* Parameters){
         telemetry[4] = 1; // 1 = connected
         uint8_t len = radio.getDynamicPayloadSize();
         char buffer[33] = {0};  // one extra for null-terminator
-        // radio.read(&buffer, len);
-
-        // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-        //   Serial.print("[nRF24 RX] Received: ");
-        //   Serial.println(buffer);
-        //   xSemaphoreGive(serialMutex);
-        // }
 
         // use mutex and read the data for telemetry
         if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
@@ -451,11 +485,11 @@ void RXtask(void* Parameters){
 
         radio.read(&buffer, len);
 
-        if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-          Serial.print("[nRF24 RX] Received: ");
-          Serial.println(buffer);
-          xSemaphoreGive(serialMutex);
-        }
+        // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+        //   Serial.print("[nRF24 RX] Received: ");
+        //   Serial.println(buffer);
+        //   xSemaphoreGive(serialMutex);
+        // }
 
         buzz_on();
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -560,17 +594,31 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
+  // result = xTaskCreate(
+  //   PIDtask,
+  //   "PID task",
+  //   256,
+  //   NULL,
+  //   1,
+  //   NULL
+  // );
+  // if (result != pdPASS) {
+  //   // Handle task creation failure
+  //   Serial.println("Failed to create PIDtask");
+  //   while (1); // Infinite loop to indicate failure
+  // }
+
   result = xTaskCreate(
-    PIDtask,
-    "PID task",
-    256,
+    MotorTest,
+    "motor testing",
+    128,
     NULL,
     1,
     NULL
   );
   if (result != pdPASS) {
     // Handle task creation failure
-    Serial.println("Failed to create PIDtask");
+    Serial.println("Failed to create motor testing task");
     while (1); // Infinite loop to indicate failure
   }
 
