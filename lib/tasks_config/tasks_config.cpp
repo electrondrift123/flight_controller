@@ -19,6 +19,35 @@
 #include "PID.h"
 #include "WDT.h"
 
+// Complementary filter for altitude estimation
+float complementaryAltitude(float baroAlt,
+                             float accN, float accE, float accD, // already NED
+                             float dt){
+  // --- Step 1: Gravity compensation (Down axis) ---
+  float acc_z_corrected = (accD - 1.0f) * 9.81f;  // m/s², zero when hovering
+
+  // --- Step 2: Integrate velocity ---
+  static float vel_z = 0.0f;
+  vel_z += acc_z_corrected * dt;
+
+  // --- Step 3: Predict altitude ---
+  static float alt_est = 0.0f;
+  float alt_pred = alt_est + vel_z * dt;
+
+  // --- Drift clamp / correction ---
+  float err = baroAlt - alt_pred;
+  if (fabsf(err) > 2.0f) {       // 2m threshold, tune
+    vel_z *= 0.5f;               // dampen velocity instead of killing it
+    alt_pred += err * 0.5f;      // pull prediction halfway toward baro
+  }
+
+  // --- Step 4: Complementary fuse with baro ---
+  float alpha = 0.98f;   // tune
+  alt_est = alpha * alt_pred + (1.0f - alpha) * baroAlt;
+
+  return alt_est;
+}
+
 void buzz_it(uint16_t num, uint16_t delay_time = 500) {
   for (uint16_t i = 0; i < num; i++) {
     buzz_on(); // Buzzer ON
@@ -90,20 +119,24 @@ void blinkTask(void *pvParameters) {
 }
 
 void readSensorsTask(void* Parameters) {
-  const TickType_t intervalTicks = pdMS_TO_TICKS(4);  // 5ms ≈ 200Hz
+  const TickType_t intervalTicks = pdMS_TO_TICKS(4);  // 4ms ≈ 250Hz
   TickType_t lastWakeTime = xTaskGetTickCount();
 
   float local_altitude; 
   float ax, ay, az, wx, wy, wz, mx, my, mz; // Madgwick
 
+  float dt;
+
   for (;;) {
+    dt = intervalTicks * portTICK_PERIOD_MS / 1000.0f; // dt in seconds
+
     // read the BMP280 sensor
     if (xSemaphoreTake(wireMutex, portMAX_DELAY)){
       // read MPU6050, BMP280, Magnetometer sensor: 
       if (sensorsReady()) {
         WDT_setSafe(true);
 
-        // Successfully read MPU6050 data
+        // Successfully read MPU6050 data (acc_xyz is in g-units)
         ax = mpuData.ax;
         ay = mpuData.ay;
         az = mpuData.az;
@@ -119,7 +152,7 @@ void readSensorsTask(void* Parameters) {
         if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
           Serial.println("Error reading sensors");
         }
-        local_altitude = 0.0f; // Set to zero if read fails
+        // local_altitude = 0.0f; // Set to zero if read fails
         buzz_on();
         vTaskDelay(pdMS_TO_TICKS(100));
         buzz_off();
@@ -142,10 +175,13 @@ void readSensorsTask(void* Parameters) {
       xSemaphoreGive(madgwickMutex);
     }
 
+      // --- call complementary filter ---
+    float fusedAlt = complementaryAltitude(local_altitude, ax, ay, az, dt);
+
     // Update shared data: BMP280 altitude
-    if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
-      loraList[2] = local_altitude; // Update altitude in loraList
-      xSemaphoreGive(loraMutex);
+    if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)){
+      telemetry[3] = fusedAlt; // Update altitude in telemetry
+      xSemaphoreGive(telemetryMutex);
     }
 
     // // debug printf
@@ -260,6 +296,9 @@ void PIDtask(void* Parameters){
   bool Emergency_Landing = false; // Emergency Landing flag
   bool KILL_MOTORS = false; // Kill Motors flag
 
+  // counter
+  static int altCounter = 0; // altitude counter
+
   for (;;){
     TickType_t currentTime = xTaskGetTickCount();
     float dt = (currentTime - previousTime) * portTICK_PERIOD_MS / 1000.0f;
@@ -273,9 +312,9 @@ void PIDtask(void* Parameters){
       yaw = eulerAngles[2];
       xSemaphoreGive(eulerAnglesMutex); // release the mutex
     }
-    if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
-      altitude = loraList[2]; // Get altitude from loraList
-      xSemaphoreGive(loraMutex); // release the mutex
+    if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)){
+      altitude = telemetry[3]; // Get altitude from telemetry
+      xSemaphoreGive(telemetryMutex); // release the mutex
     }
 
     // read user input from nRF24L01 (use mutex):
@@ -340,12 +379,15 @@ void PIDtask(void* Parameters){
 
     // ====== ALTITUDE HOLD ======
     if (ALT_H) {
-      static float targetAltitude = 0.0f;
-      if (!altitudeLockSet) {
-        targetAltitude = altitude;  // lock on current altitude
-        altitudeLockSet = true;
+      altCounter++;
+      if (altCounter >= 10){
+        static float targetAltitude = 0.0f; // the last altitude state w/o controller
+        if (!altitudeLockSet) {
+          targetAltitude = altitude;  // lock on current altitude
+          altitudeLockSet = true;
+        }
+        throttleFiltered = computePID(&pidThrottle, targetAltitude, altitude, dt);
       }
-      throttleFiltered = computePID(&pidThrottle, targetAltitude, altitude, dt);
     }else{
       // to remove the CONFLICT between EMA & PID
       altitudeLockSet = false;
@@ -398,7 +440,7 @@ void PIDtask(void* Parameters){
     Serial.print("0"); Serial.print(", ");
     Serial.print(roll); Serial.print(", "); 
     Serial.print(roll_correction); Serial.print(", ");
-    Serial.print(currentTime * portTICK_PERIOD_MS / 1000.0f); Serial.print(", ");
+    Serial.print(currentTime * portTICK_PERIOD_MS); Serial.print(", ");
     Serial.println("1.00");
     // PID tuning Ends 
 
@@ -417,7 +459,6 @@ void PIDtask(void* Parameters){
 
       xSemaphoreGive(serialMutex);
     }
-
     vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
 }
@@ -453,9 +494,11 @@ void MotorTest(void *Parameters){
 
 
 // nRF24 RX task
-//// TODO: test it!!!!
+//// Note: 
+//// Coming from the global telemetry[] array in shared_data.h and a float type.
+//// Before it is sent via nRF24, it is converted to int16_t type to save space.
 void RXtask(void* Parameters){
-  int16_t telemetry[5] = {0, 0, 0, 0, 0}; // Telemetry data to send back
+  int16_t local_telemetry[5] = {0, 0, 0, 0, 0}; // Telemetry data to send back
   // temporary for testing: {roll, pitch, yaw, altitude, radio_state}
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for IRQ
@@ -464,24 +507,24 @@ void RXtask(void* Parameters){
 
     if (flags & RF24_RX_DR) {
       while (radio.available()) {
-        telemetry[4] = 1; // 1 = connected
+        local_telemetry[4] = 1; // 1 = connected
         uint8_t len = radio.getDynamicPayloadSize();
         char buffer[33] = {0};  // one extra for null-terminator
 
         // use mutex and read the data for telemetry
         if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
-          telemetry[0] = (int16_t) eulerAngles[0]; // roll
-          telemetry[1] = (int16_t) eulerAngles[1]; // pitch
-          telemetry[2] = (int16_t) eulerAngles[2]; // yaw
+          local_telemetry[0] = (int16_t) eulerAngles[0]; // roll
+          local_telemetry[1] = (int16_t) eulerAngles[1]; // pitch
+          local_telemetry[2] = (int16_t) eulerAngles[2]; // yaw
           xSemaphoreGive(eulerAnglesMutex);
         }
-        if (xSemaphoreTake(loraMutex, portMAX_DELAY)){
-          telemetry[3] = (int16_t) loraList[2]; // altitude
-          xSemaphoreGive(loraMutex);
+        if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)){
+          local_telemetry[3] = (int16_t) telemetry[3]; // altitude
+          xSemaphoreGive(telemetryMutex);
         }
         
         // Send as ACK payload
-        radio.writeAckPayload(PIPE_INDEX, telemetry, sizeof(telemetry));
+        radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
 
         radio.read(&buffer, len);
 
@@ -526,9 +569,9 @@ void batteryMonitorTask(void* Parameters){
     // Read battery voltage
 
     // Update shared data
-    if (xSemaphoreTake(loraMutex, portMAX_DELAY)) {
-      loraList[5] = batteryVoltage; // Update battery voltage in loraList
-      xSemaphoreGive(loraMutex);
+    if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)) {
+      telemetry[5] = batteryVoltage; // Update battery voltage in telemetry
+      xSemaphoreGive(telemetryMutex);
     }
     
     vTaskDelay(interval);

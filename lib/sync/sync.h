@@ -12,7 +12,7 @@ extern SemaphoreHandle_t spiMutex;
 extern SemaphoreHandle_t eulerAnglesMutex;
 
 extern SemaphoreHandle_t nRF24Mutex;
-extern SemaphoreHandle_t loraMutex;
+extern SemaphoreHandle_t telemetryMutex;
 
 // Task Handles
 extern TaskHandle_t radioTaskHandle;

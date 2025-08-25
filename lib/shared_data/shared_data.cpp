@@ -14,7 +14,7 @@ PIDControllerData_t pidThrottle; // for altitude hold
 volatile float eulerAngles[3] = {0.0f, 0.0f, 0.0f};
 
 volatile float inputList[8] = {1000.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-volatile float loraList[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+volatile float telemetry[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
 volatile float MadgwickSensorList[9] = {0.00f, 0.00f, 0.00f,
                                         0.00f, 0.00f, 0.00f,

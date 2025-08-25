@@ -8,7 +8,7 @@ SemaphoreHandle_t spiMutex;
 SemaphoreHandle_t eulerAnglesMutex;
 
 SemaphoreHandle_t nRF24Mutex;
-SemaphoreHandle_t loraMutex;
+SemaphoreHandle_t telemetryMutex;
 
 SemaphoreHandle_t madgwickMutex;
 
@@ -39,8 +39,8 @@ void mutexes_init(void){
     Serial.println("Failed to create nRF24 mutex!");
     while (1); // halt or retry
   }
-  loraMutex = xSemaphoreCreateMutex();
-  if (loraMutex == NULL) {
+  telemetryMutex = xSemaphoreCreateMutex();
+  if (telemetryMutex == NULL) {
     Serial.println("Failed to create LoRa mutex!");
     while (1); // halt or retry
   }
