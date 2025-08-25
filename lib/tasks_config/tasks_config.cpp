@@ -42,7 +42,7 @@ float complementaryAltitude(float baroAlt,
   }
 
   // --- Step 4: Complementary fuse with baro ---
-  float alpha = 0.98f;   // tune
+  float alpha = 0.60f;   // tune
   alt_est = alpha * alt_pred + (1.0f - alpha) * baroAlt;
 
   return alt_est;
@@ -178,22 +178,28 @@ void readSensorsTask(void* Parameters) {
       // --- call complementary filter ---
     float fusedAlt = complementaryAltitude(local_altitude, ax, ay, az, dt);
 
+    // use EMA filter again for the altitude
+    static float altSmooth = 0.0f;
+    float alpha = 0.9f; // high = smoother
+    altSmooth = alpha * altSmooth + (1.0f - alpha) * fusedAlt;
+
+
     // Update shared data: BMP280 altitude
     if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)){
-      telemetry[3] = fusedAlt; // Update altitude in telemetry
+      telemetry[3] = altSmooth; // Update altitude in telemetry
       xSemaphoreGive(telemetryMutex);
     }
 
-    // // debug printf
-    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-    //   Serial.print("Euler: ");
-    //   Serial.print(madData.roll); Serial.print(", ");
-    //   Serial.print(madData.pitch); Serial.print(", ");
-    //   Serial.println(madData.yaw);
+    // debug printf
+    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+      Serial.print("Euler: ");
+      Serial.print(madData.roll); Serial.print(", ");
+      Serial.print(madData.pitch); Serial.print(", ");
+      Serial.println(madData.yaw);
 
-    //   Serial.print("Altitude: "); Serial.println(local_altitude);
-    //   xSemaphoreGive(serialMutex);
-    // }
+      Serial.print("Altitude: "); Serial.println(altSmooth);
+      xSemaphoreGive(serialMutex);
+    }
 
     vTaskDelayUntil(&lastWakeTime, intervalTicks); 
   }
@@ -437,11 +443,11 @@ void PIDtask(void* Parameters){
 
     // PID tuning Starts (FC only)
     // roll: [setpoint, actual, correction, current time in ms, P_val]
-    Serial.print("0"); Serial.print(", ");
-    Serial.print(roll); Serial.print(", "); 
-    Serial.print(roll_correction); Serial.print(", ");
-    Serial.print(currentTime * portTICK_PERIOD_MS); Serial.print(", ");
-    Serial.println("1.00");
+    // Serial.print("0"); Serial.print(", ");
+    // Serial.print(roll); Serial.print(", "); 
+    // Serial.print(roll_correction); Serial.print(", ");
+    // Serial.print(currentTime * portTICK_PERIOD_MS); Serial.print(", ");
+    // Serial.println("1.00");
     // PID tuning Ends 
 
     //   Serial.print("M1: "); Serial.print(motor1_output); Serial.print(" | ");
@@ -473,20 +479,20 @@ void MotorTest(void *Parameters){
   vTaskDelay(pdMS_TO_TICKS(3000));   // wait for the beeps to finish
 
   for(;;){
-    for (int i = 0; i <= 300; i++){
-      TIM2->CCR1 = 1200 + i;
-      TIM2->CCR2 = 1200 + i;
-      TIM2->CCR3 = 1200 + i;
-      TIM2->CCR4 = 1200 + i;
-      vTaskDelay(pdMS_TO_TICKS(10));
+    for (int i = 0; i <= 200; i++){
+      TIM2->CCR1 = 1300 + i;
+      TIM2->CCR2 = 1300 + i;
+      TIM2->CCR3 = 1300 + i;
+      TIM2->CCR4 = 1300 + i;
+      vTaskDelay(pdMS_TO_TICKS(50));
     }
     vTaskDelay(pdMS_TO_TICKS(1000));
-    for (int i = 300; i >= 0; i--){
+    for (int i = 200; i >= 0; i--){
       TIM2->CCR1 = 1500 - i;
       TIM2->CCR2 = 1500 - i;
       TIM2->CCR3 = 1500 - i;
       TIM2->CCR4 = 1500 - i;
-      vTaskDelay(pdMS_TO_TICKS(10));
+      vTaskDelay(pdMS_TO_TICKS(50));
     }
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
@@ -637,33 +643,33 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
-  // result = xTaskCreate(
-  //   PIDtask,
-  //   "PID task",
-  //   256,
-  //   NULL,
-  //   1,
-  //   NULL
-  // );
-  // if (result != pdPASS) {
-  //   // Handle task creation failure
-  //   Serial.println("Failed to create PIDtask");
-  //   while (1); // Infinite loop to indicate failure
-  // }
-
   result = xTaskCreate(
-    MotorTest,
-    "motor testing",
-    128,
+    PIDtask,
+    "PID task",
+    256,
     NULL,
     1,
     NULL
   );
   if (result != pdPASS) {
     // Handle task creation failure
-    Serial.println("Failed to create motor testing task");
+    Serial.println("Failed to create PIDtask");
     while (1); // Infinite loop to indicate failure
   }
+
+  // result = xTaskCreate(
+  //   MotorTest,
+  //   "motor testing",
+  //   128,
+  //   NULL,
+  //   1,
+  //   NULL
+  // );
+  // if (result != pdPASS) {
+  //   // Handle task creation failure
+  //   Serial.println("Failed to create motor testing task");
+  //   while (1); // Infinite loop to indicate failure
+  // }
 
   result = xTaskCreate(
     RXtask,
