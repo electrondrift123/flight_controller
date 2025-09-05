@@ -22,6 +22,9 @@ extern PIDControllerData_t pidPitch;
 extern PIDControllerData_t pidYaw;
 extern PIDControllerData_t pidThrottle; // for altitude hold
 
+// PID params
+
+
 //// TODO: rate Mode to be added
 
 // Euler angles output from filter

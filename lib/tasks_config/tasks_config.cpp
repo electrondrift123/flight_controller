@@ -2,7 +2,7 @@
 
 #include <STM32FreeRTOS.h>
 #include <RF24.h>
-#include <RadioLib.h>
+// #include <RadioLib.h>
 
 #include "QMC5883P.h"
 #include "MPU6050.h"
@@ -61,15 +61,6 @@ static inline float constrainFloat(float val, float minVal, float maxVal) {
     if (val < minVal) return minVal;
     if (val > maxVal) return maxVal;
     return val;
-}
-
-void disableMotors(void) {
-  TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 0;
-  TIM2->CCER &= ~(TIM_CCER_CC1E | TIM_CCER_CC2E | TIM_CCER_CC3E | TIM_CCER_CC4E);
-}
-
-void enableMotors(void) {
-  TIM2->CCER |= (TIM_CCER_CC1E | TIM_CCER_CC2E | TIM_CCER_CC3E | TIM_CCER_CC4E);
 }
 
 // check sensor function
@@ -190,16 +181,16 @@ void readSensorsTask(void* Parameters) {
       xSemaphoreGive(telemetryMutex);
     }
 
-    // debug printf
-    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-      Serial.print("Euler: ");
-      Serial.print(madData.roll); Serial.print(", ");
-      Serial.print(madData.pitch); Serial.print(", ");
-      Serial.println(madData.yaw);
+    // // debug printf
+    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+    //   Serial.print("Euler: ");
+    //   Serial.print(madData.roll); Serial.print(", ");
+    //   Serial.print(madData.pitch); Serial.print(", ");
+    //   Serial.println(madData.yaw);
 
-      Serial.print("Altitude: "); Serial.println(altSmooth);
-      xSemaphoreGive(serialMutex);
-    }
+    //   Serial.print("Altitude: "); Serial.println(altSmooth);
+    //   xSemaphoreGive(serialMutex);
+    // }
 
     vTaskDelayUntil(&lastWakeTime, intervalTicks); 
   }
@@ -285,7 +276,6 @@ void PIDtask(void* Parameters){
   float roll, pitch, yaw; // local variables for Euler Angles
   float throttle, rollInput, pitchInput, yawInput; // user inputs
 
-  static bool motorsEnabled = true;
   static bool altitudeLockSet = false;
 
   // EMA filter variables & constants
@@ -326,40 +316,34 @@ void PIDtask(void* Parameters){
     // read user input from nRF24L01 (use mutex):
     if (xSemaphoreTake(nRF24Mutex, portMAX_DELAY)){
       // read user input here
-      throttle = inputList[0]; // Throttle
-      rollInput = inputList[1]; // Roll input
-      pitchInput = inputList[2]; // Pitch input
-      yawInput = inputList[3]; // Yaw input
+      // throttle = inputList[0]; // Throttle
+      // rollInput = inputList[1]; // Roll input
+      // pitchInput = inputList[2]; // Pitch input
+      // yawInput = inputList[3]; // Yaw input
+      throttle = 1500.0f; // Throttle
+      rollInput = 0.0f; // Roll input
+      pitchInput = 0.0f; // Pitch input
+      yawInput = 0.0f; // Yaw input
 
-      RTL = (inputList[4] != 0.0f);
+      // RTL = (inputList[4] != 0.0f);
       Emergency_Landing = (inputList[5] != 0.0f);
-      KILL_MOTORS = (inputList[6] != 0.0f);
+      // KILL_MOTORS = (inputList[6] != 0.0f);
+      KILL_MOTORS = (inputList[4] != 0.0f);
       ALT_H = (inputList[7] != 0.0f); 
       xSemaphoreGive(nRF24Mutex); // release the mutex
     }
 
     // ====== SHUTDOWN MOTORS ======
     if (KILL_MOTORS) {
-      if (motorsEnabled) {
-        resetPID(&pidRoll);
-        resetPID(&pidPitch);
-        resetPID(&pidYaw);
+      resetPID(&pidRoll);
+      resetPID(&pidPitch);
+      resetPID(&pidYaw);
 
-        // Only disable if currently enabled
-        disableMotors();  // your wrapper
-        motorsEnabled = false;
-      }
-
-      // stay in off state
-      vTaskDelayUntil(&lastWakeTime, interval);
-      continue;
-
-    } else {
-      if (!motorsEnabled) {
-        // Only re-enable if previously disabled
-        enableMotors();  // your wrapper
-        motorsEnabled = true;
-      }
+      // set motors to 1ms
+      TIM2->CCR1 = 1000;
+      TIM2->CCR2 = 1000;
+      TIM2->CCR3 = 1000;
+      TIM2->CCR4 = 1000;
     }
 
     // ====== RETURN TO LAUNCH ======
@@ -408,7 +392,8 @@ void PIDtask(void* Parameters){
     // PID start:
     float roll_correction = computePID(&pidRoll, rollInputFiltered, roll, dt);
     float pitch_correction = computePID(&pidPitch, pitchInputFiltered, pitch, dt);
-    float yaw_correction = computePID(&pidYaw, yawInputFiltered, yaw, dt);
+    // float yaw_correction = computePID(&pidYaw, yawInputFiltered, yaw, dt);
+    float yaw_correction = 0.0f;
     // float throttle_correction = computePID(&pidThrottle, throttleFiltered, throttle, dt);
 
     // Motor Mixer Algorithm (Props-out), (not yet tested):
@@ -419,7 +404,7 @@ void PIDtask(void* Parameters){
     
     // Failsafe & Limit motor outputs to the range [1000, 2000]:
     // Disable PID correction when throttle is low and drone is likely landed:
-    if (!ALT_H && throttleFiltered < 1050.0f) {
+    if (!ALT_H && throttleFiltered < 1100.0f) {
       resetPID(&pidRoll);
       resetPID(&pidPitch);
       resetPID(&pidYaw);
@@ -438,33 +423,29 @@ void PIDtask(void* Parameters){
     TIM2->CCR4 = (uint16_t)motor4_output;
 
 
-    // Debugging output: Temporary -> uncomment it in deployment!
-    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-
-    // PID tuning Starts (FC only)
-    // roll: [setpoint, actual, correction, current time in ms, P_val]
+    // // Debugging output: Temporary -> uncomment it in deployment!
+    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+    // // PID tuning Starts (FC only)
+    // // roll: [setpoint, actual, correction, current time in ms, P_val]
     // Serial.print("0"); Serial.print(", ");
     // Serial.print(roll); Serial.print(", "); 
     // Serial.print(roll_correction); Serial.print(", ");
     // Serial.print(currentTime * portTICK_PERIOD_MS); Serial.print(", ");
     // Serial.println("1.00");
-    // PID tuning Ends 
 
-    //   Serial.print("M1: "); Serial.print(motor1_output); Serial.print(" | ");
-    //   Serial.print("M2: "); Serial.print(motor2_output); Serial.print(" | ");
-    //   Serial.print("M3: "); Serial.print(motor3_output); Serial.print(" | ");
-    //   Serial.print("M4: "); Serial.println(motor4_output);
+    // Serial.print(pitch); Serial.print(", ");
+    // Serial.println(pitch_correction);
 
-    //   //// raw angles: 
-    //   // Serial.print("Angles: "); Serial.print(roll); Serial.print(" | ");
-    //   // Serial.print(pitch); Serial.print(" | "); Serial.println(yaw);
+    // Serial.print(yaw); Serial.print(", ");
+    // Serial.println(yaw_correction);
+    // // PID tuning Ends 
 
-    //   //// Corrected Angles
-    //   // Serial.print("Corrected: "); Serial.print(roll_correction); Serial.print(", ");
-    //   // Serial.print(pitch_correction); Serial.print(", "); Serial.println(yaw_correction);
-
-      xSemaphoreGive(serialMutex);
-    }
+    // Serial.print(motor1_output); Serial.print(", ");
+    // Serial.print(motor2_output); Serial.print(", ");
+    // Serial.print(motor3_output); Serial.print(", ");
+    // Serial.println(motor4_output); 
+    // xSemaphoreGive(serialMutex);
+    // }
     vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
 }
@@ -486,7 +467,7 @@ void MotorTest(void *Parameters){
       TIM2->CCR4 = 1300 + i;
       vTaskDelay(pdMS_TO_TICKS(50));
     }
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(500));
     for (int i = 200; i >= 0; i--){
       TIM2->CCR1 = 1500 - i;
       TIM2->CCR2 = 1500 - i;
@@ -494,7 +475,7 @@ void MotorTest(void *Parameters){
       TIM2->CCR4 = 1500 - i;
       vTaskDelay(pdMS_TO_TICKS(50));
     }
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
 }
 
@@ -506,6 +487,10 @@ void MotorTest(void *Parameters){
 void RXtask(void* Parameters){
   int16_t local_telemetry[5] = {0, 0, 0, 0, 0}; // Telemetry data to send back
   // temporary for testing: {roll, pitch, yaw, altitude, radio_state}
+  int mode = 1; // 1 = roll, 2 = pitch, 3 = yaw
+  float kp, ki, kd, kill; 
+
+  int16_t rx_load[5];
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for IRQ
 
@@ -514,8 +499,8 @@ void RXtask(void* Parameters){
     if (flags & RF24_RX_DR) {
       while (radio.available()) {
         local_telemetry[4] = 1; // 1 = connected
-        uint8_t len = radio.getDynamicPayloadSize();
-        char buffer[33] = {0};  // one extra for null-terminator
+        // uint8_t len = radio.getDynamicPayloadSize();
+        // char buffer[33] = {0};  // one extra for null-terminator
 
         // use mutex and read the data for telemetry
         if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
@@ -532,20 +517,61 @@ void RXtask(void* Parameters){
         // Send as ACK payload
         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
 
-        radio.read(&buffer, len);
+        // radio.read(&buffer, len);
+        radio.read(rx_load, sizeof(rx_load)); // read into int16_t list
 
-        // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-        //   Serial.print("[nRF24 RX] Received: ");
-        //   Serial.println(buffer);
-        //   xSemaphoreGive(serialMutex);
-        // }
+        if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+          Serial.print("[nRF24 RX] Received: ");
+          // Serial.println(rx_load[i]); // int16t list 
+          for (int i = 0; i < 4; i++) {
+            Serial.print(rx_load[i]); Serial.print(", ");
+          }
+          Serial.println(rx_load[4]);
+          xSemaphoreGive(serialMutex);
+        }
 
         buzz_on();
         vTaskDelay(pdMS_TO_TICKS(10));
         buzz_off();
 
-
         //// TODO: process the received data:
+        //// for pid tuning
+        // input list: [mode, kp, ki, kd, kill], float type
+
+        // 1. store 
+        mode = (int)rx_load[0];
+        kp = (float)rx_load[1] / 100.0f; // divide by 100 to get the actual value
+        ki = (float)rx_load[2] / 100.0f;
+        kd = (float)rx_load[3] / 100.0f;
+        kill = (float)rx_load[4];
+
+        // 2. update the pid params
+        if (xSemaphoreTake(nRF24Mutex, portMAX_DELAY)){
+          // mode = inputList[0];
+          // kp = inputList[1];
+          // ki = inputList[2];
+          // kd = inputList[3];
+          inputList[4] = kill; // update kill flag in inputList
+          xSemaphoreGive(nRF24Mutex);
+        }
+
+        if (mode = 1){
+          // roll only
+          pidRoll.kp = kp;
+          pidRoll.ki = ki;
+          pidRoll.kd = kd;
+        }
+        if (mode = 2){ // pitch only
+          pidPitch.kp = kp;
+          pidPitch.ki = ki;
+          pidPitch.kd = kd;
+        }
+        if (mode = 3){ // yaw only
+          pidYaw.kp = kp;
+          pidYaw.ki = ki;
+          pidYaw.kd = kd;
+        }
+        
       }
     }
 
@@ -554,16 +580,6 @@ void RXtask(void* Parameters){
     }
   }
 }
-
-// // //// TODO: implement
-// // void loraTXtask(void* Parameters){
-// //   TickType_t interval = pdMS_TO_TICKS(1000);
-
-// //   for (;;){
-
-// //     vTaskDelay(interval);
-// //   }
-// // }
 
 //// TODO: find ADC pin for this task
 void batteryMonitorTask(void* Parameters){
@@ -684,15 +700,6 @@ void freeRTOS_tasks_init(void){
     Serial.println("Failed to create RXtask");
     while (1); // Infinite loop to indicate failure
   }
-
-  // // xTaskCreate(
-  // //   loraTXtask,
-  // //   "LoRa TX Task",
-  // //   128,
-  // //   NULL,
-  // //   1,
-  // //   NULL
-  // // );
 
   // result = xTaskCreate(
   //   batteryMonitorTask,
