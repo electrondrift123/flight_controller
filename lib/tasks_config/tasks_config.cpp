@@ -276,6 +276,8 @@ void PIDtask(void* Parameters){
   float roll, pitch, yaw; // local variables for Euler Angles
   float throttle, rollInput, pitchInput, yawInput; // user inputs
 
+  float rollRate, pitchRate, yawRate;
+
   static bool altitudeLockSet = false;
 
   // EMA filter variables & constants
@@ -295,6 +297,8 @@ void PIDtask(void* Parameters){
   // counter
   static int altCounter = 0; // altitude counter
 
+  vTaskDelay(pdMS_TO_TICKS(3000)); // delay for arming motor
+
   for (;;){
     TickType_t currentTime = xTaskGetTickCount();
     float dt = (currentTime - previousTime) * portTICK_PERIOD_MS / 1000.0f;
@@ -307,6 +311,14 @@ void PIDtask(void* Parameters){
       pitch = eulerAngles[1];
       yaw = eulerAngles[2];
       xSemaphoreGive(eulerAnglesMutex); // release the mutex
+    }
+    if (xSemaphoreTake(madgwickMutex, portMAX_DELAY)){
+      // read Madgwick's data: units: rad
+      // convert: rad -> deg
+      rollRate = MadgwickSensorList[3] * RAD_TO_DEG; // Gyro X
+      pitchRate = MadgwickSensorList[4] * RAD_TO_DEG; // Gyro Y
+      yawRate = MadgwickSensorList[5] * RAD_TO_DEG; // Gyro Z
+      xSemaphoreGive(madgwickMutex); // release the mutex
     }
     if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)){
       altitude = telemetry[3]; // Get altitude from telemetry
@@ -390,17 +402,34 @@ void PIDtask(void* Parameters){
     yawInputFiltered   = alpha * yawInput   + (1 - alpha) * yawInputFiltered;
 
     // PID start:
-    float roll_correction = computePID(&pidRoll, rollInputFiltered, roll, dt);
-    float pitch_correction = computePID(&pidPitch, pitchInputFiltered, pitch, dt);
-    // float yaw_correction = computePID(&pidYaw, yawInputFiltered, yaw, dt);
-    float yaw_correction = 0.0f;
-    // float throttle_correction = computePID(&pidThrottle, throttleFiltered, throttle, dt);
+    // Outer loop:
+    // float roll_correction = computePID(&pidRoll, rollInputFiltered, roll, dt);
+    // float pitch_correction = computePID(&pidPitch, pitchInputFiltered, pitch, dt);
+    // // float yaw_correction = computePID(&pidYaw, yawInputFiltered, yaw, dt);
+    // float yaw_correction = 0.0f;
+    // // float throttle_correction = computePID(&pidThrottle, throttleFiltered, throttle, dt);
+
+    // computing desired rates: (only Kp, P-controller):
+    float roll_rate_setpoint = computePID(&pidRoll, rollInputFiltered, roll, dt); // deg/s
+    float pitch_rate_setpoint = computePID(&pidPitch, pitchInputFiltered, pitch, dt); // deg/s
+    float yaw_rate_setpoint = computePID(&pidYaw, yawInputFiltered, yaw, dt); // deg/s
+
+    // Inner loop: (full PID)
+    float roll_rate_correction = computePID(&pidRollRate, roll_rate_setpoint, rollRate, dt);
+    float pitch_rate_correction = computePID(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt);
+    float yaw_rate_correction = computePID(&pidYawRate, yaw_rate_setpoint, yawRate, dt);
+
+    // // Motor Mixer Algorithm (Props-out), (not yet tested):
+    // float motor1_output = throttleFiltered + roll_correction + pitch_correction + yaw_correction; // Front Left
+    // float motor2_output = throttleFiltered - roll_correction + pitch_correction - yaw_correction; // Front Right
+    // float motor3_output = throttleFiltered + roll_correction - pitch_correction - yaw_correction; // Back Left
+    // float motor4_output = throttleFiltered - roll_correction - pitch_correction + yaw_correction; // Back Right
 
     // Motor Mixer Algorithm (Props-out), (not yet tested):
-    float motor1_output = throttleFiltered + roll_correction + pitch_correction + yaw_correction; // Front Left
-    float motor2_output = throttleFiltered - roll_correction + pitch_correction - yaw_correction; // Front Right
-    float motor3_output = throttleFiltered + roll_correction - pitch_correction - yaw_correction; // Back Left
-    float motor4_output = throttleFiltered - roll_correction - pitch_correction + yaw_correction; // Back Right
+    float motor1_output = throttleFiltered + roll_rate_correction + pitch_rate_correction + yaw_rate_correction; // Front Left
+    float motor2_output = throttleFiltered - roll_rate_correction + pitch_rate_correction - yaw_rate_correction; // Front Right
+    float motor3_output = throttleFiltered + roll_rate_correction - pitch_rate_correction - yaw_rate_correction; // Back Left
+    float motor4_output = throttleFiltered - roll_rate_correction - pitch_rate_correction + yaw_rate_correction; // Back Right
     
     // Failsafe & Limit motor outputs to the range [1000, 2000]:
     // Disable PID correction when throttle is low and drone is likely landed:
@@ -408,6 +437,10 @@ void PIDtask(void* Parameters){
       resetPID(&pidRoll);
       resetPID(&pidPitch);
       resetPID(&pidYaw);
+
+      resetPID(&pidRollRate);
+      resetPID(&pidPitchRate);
+      resetPID(&pidYawRate);
       motor1_output = motor2_output = motor3_output = motor4_output = 1000.0f;
     } else {
       motor1_output = constrainFloat(motor1_output, 1000.0f, 2000.0f);
@@ -490,7 +523,7 @@ void RXtask(void* Parameters){
   int mode = 1; // 1 = roll, 2 = pitch, 3 = yaw
   float kp, ki, kd, kill; 
 
-  int16_t rx_load[5];
+  int16_t rx_load[5]; // received data buffer
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for IRQ
 
@@ -498,9 +531,7 @@ void RXtask(void* Parameters){
 
     if (flags & RF24_RX_DR) {
       while (radio.available()) {
-        local_telemetry[4] = 1; // 1 = connected
-        // uint8_t len = radio.getDynamicPayloadSize();
-        // char buffer[33] = {0};  // one extra for null-terminator
+        local_telemetry[4] = 1; // 1 = connected, 0 = disconnected
 
         // use mutex and read the data for telemetry
         if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
@@ -555,8 +586,7 @@ void RXtask(void* Parameters){
           xSemaphoreGive(nRF24Mutex);
         }
 
-        if (mode = 1){
-          // roll only
+        if (mode = 1){ // roll only
           pidRoll.kp = kp;
           pidRoll.ki = ki;
           pidRoll.kd = kd;

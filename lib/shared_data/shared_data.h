@@ -22,6 +22,10 @@ extern PIDControllerData_t pidPitch;
 extern PIDControllerData_t pidYaw;
 extern PIDControllerData_t pidThrottle; // for altitude hold
 
+extern PIDControllerData_t pidRollRate;
+extern PIDControllerData_t pidPitchRate;
+extern PIDControllerData_t pidYawRate;
+
 // PID params
 
 

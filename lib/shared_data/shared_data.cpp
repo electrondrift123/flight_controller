@@ -11,6 +11,10 @@ PIDControllerData_t pidPitch;
 PIDControllerData_t pidYaw;
 PIDControllerData_t pidThrottle; // for altitude hold
 
+PIDControllerData_t pidRollRate;
+PIDControllerData_t pidPitchRate;
+PIDControllerData_t pidYawRate;
+
 volatile float eulerAngles[3] = {0.0f, 0.0f, 0.0f};
 
 volatile float inputList[8] = {1000.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
