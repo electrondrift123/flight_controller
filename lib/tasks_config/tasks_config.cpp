@@ -403,12 +403,6 @@ void PIDtask(void* Parameters){
 
     // PID start:
     // Outer loop:
-    // float roll_correction = computePID(&pidRoll, rollInputFiltered, roll, dt);
-    // float pitch_correction = computePID(&pidPitch, pitchInputFiltered, pitch, dt);
-    // // float yaw_correction = computePID(&pidYaw, yawInputFiltered, yaw, dt);
-    // float yaw_correction = 0.0f;
-    // // float throttle_correction = computePID(&pidThrottle, throttleFiltered, throttle, dt);
-
     // computing desired rates: (only Kp, P-controller):
     float roll_rate_setpoint = computePID(&pidRoll, rollInputFiltered, roll, dt); // deg/s
     float pitch_rate_setpoint = computePID(&pidPitch, pitchInputFiltered, pitch, dt); // deg/s
@@ -419,12 +413,9 @@ void PIDtask(void* Parameters){
     float pitch_rate_correction = computePID(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt);
     float yaw_rate_correction = computePID(&pidYawRate, yaw_rate_setpoint, yawRate, dt);
 
-    // // Motor Mixer Algorithm (Props-out), (not yet tested):
-    // float motor1_output = throttleFiltered + roll_correction + pitch_correction + yaw_correction; // Front Left
-    // float motor2_output = throttleFiltered - roll_correction + pitch_correction - yaw_correction; // Front Right
-    // float motor3_output = throttleFiltered + roll_correction - pitch_correction - yaw_correction; // Back Left
-    // float motor4_output = throttleFiltered - roll_correction - pitch_correction + yaw_correction; // Back Right
-
+    // PID end.
+    throttleFiltered = constrainFloat(throttleFiltered, 1400.0f, 1800.0f);
+    //// TODO: add gain for the rate corrections
     // Motor Mixer Algorithm (Props-out), (not yet tested):
     float motor1_output = throttleFiltered + roll_rate_correction + pitch_rate_correction + yaw_rate_correction; // Front Left
     float motor2_output = throttleFiltered - roll_rate_correction + pitch_rate_correction - yaw_rate_correction; // Front Right
@@ -587,19 +578,19 @@ void RXtask(void* Parameters){
         }
 
         if (mode = 1){ // roll only
-          pidRoll.kp = kp;
-          pidRoll.ki = ki;
-          pidRoll.kd = kd;
+          pidRollRate.kp = kp;
+          pidRollRate.ki = ki;
+          pidRollRate.kd = kd;
         }
         if (mode = 2){ // pitch only
-          pidPitch.kp = kp;
-          pidPitch.ki = ki;
-          pidPitch.kd = kd;
+          pidPitchRate.kp = kp;
+          pidPitchRate.ki = ki;
+          pidPitchRate.kd = kd;
         }
         if (mode = 3){ // yaw only
-          pidYaw.kp = kp;
-          pidYaw.ki = ki;
-          pidYaw.kd = kd;
+          pidYawRate.kp = kp;
+          pidYawRate.ki = ki;
+          pidYawRate.kd = kd;
         }
         
       }
