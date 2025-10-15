@@ -49,14 +49,14 @@ void setup() {
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!
   // outer loop: P-controller for roll, pitch, yaw angles
-  initPID(&pidRoll,  0.5f, 0.0f, 0.0f, -200.0f, 200.0f, 100.0f);
-  initPID(&pidPitch, 0.5f, 0.0f, 0.0f, -200.0f, 200.0f, 100.0f);
-  initPID(&pidYaw,   0.1f, 0.0f, 0.0f, -200.0f, 200.0f, 100.0f);
-  // initPID(&pidThrottle,   1.0f, 0.0f, 0.0f, 1000.0f, 2000.0f, 100.0f);
+  initPID(&pidRoll,  0.5f, 0.0f, 0.0f, -100.0f, 100.0f, 100.0f);
+  initPID(&pidPitch, 0.5f, 0.0f, 0.0f, -100.0f, 100.0f, 100.0f);
+  initPID(&pidYaw,   0.1f, 0.0f, 0.0f, -80.0f, 80.0f, 100.0f);
   // inner loop: PID for rates (deg/sec)
-  initPID(&pidRollRate,  1.0f, 0.0f, 0.1f, -200.0f, 200.0f, 100.0f);
-  initPID(&pidPitchRate, 1.0f, 0.0f, 0.1f, -200.0f, 200.0f, 100.0f);
-  initPID(&pidYawRate,   1.0f, 0.0f, 0.1f, -200.0f, 200.0f, 100.0f);
+  initPID(&pidRollRate,  10.0f, 0.0f, 0.1f, -300.0f, 300.0f, 100.0f);
+  initPID(&pidPitchRate, 10.0f, 0.0f, 0.1f, -300.0f, 300.0f, 100.0f);
+  // initPID(&pidYawRate,   8.5f, 0.1f, 0.1f, -250.0f, 250.0f, 100.0f);
+  initPID(&pidYawRate,   0.0f, 0.0f, 0.0f, -250.0f, 250.0f, 100.0f); // for testing in a rod
 
   // interrupts();
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks

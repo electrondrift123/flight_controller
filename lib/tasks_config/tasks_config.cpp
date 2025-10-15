@@ -183,10 +183,10 @@ void readSensorsTask(void* Parameters) {
 
     // // debug printf
     // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-    //   Serial.print("Euler: ");
-    //   Serial.print(madData.roll); Serial.print(", ");
-    //   Serial.print(madData.pitch); Serial.print(", ");
-    //   Serial.println(madData.yaw);
+      // Serial.print("Euler: ");
+      // Serial.print(madData.roll); Serial.print(", ");
+      // Serial.print(madData.pitch); Serial.print(", ");
+      // Serial.println(madData.yaw);
 
     //   Serial.print("Altitude: "); Serial.println(altSmooth);
     //   xSemaphoreGive(serialMutex);
@@ -276,7 +276,7 @@ void PIDtask(void* Parameters){
   float roll, pitch, yaw; // local variables for Euler Angles
   float throttle, rollInput, pitchInput, yawInput; // user inputs
 
-  float rollRate, pitchRate, yawRate;
+  float rollRate, pitchRate, yawRate; // from sensors
 
   static bool altitudeLockSet = false;
 
@@ -457,6 +457,8 @@ void PIDtask(void* Parameters){
     // Serial.print(currentTime * portTICK_PERIOD_MS); Serial.print(", ");
     // Serial.println("1.00");
 
+    // Serial.println(roll_rate_correction);
+
     // Serial.print(pitch); Serial.print(", ");
     // Serial.println(pitch_correction);
 
@@ -464,6 +466,7 @@ void PIDtask(void* Parameters){
     // Serial.println(yaw_correction);
     // // PID tuning Ends 
 
+    // Serial.print(roll); Serial.print(", ");
     // Serial.print(motor1_output); Serial.print(", ");
     // Serial.print(motor2_output); Serial.print(", ");
     // Serial.print(motor3_output); Serial.print(", ");
@@ -566,6 +569,11 @@ void RXtask(void* Parameters){
         ki = (float)rx_load[2] / 100.0f;
         kd = (float)rx_load[3] / 100.0f;
         kill = (float)rx_load[4];
+
+        // clamp the PID gains
+        kp = constrainFloat(kp, 1.0f, 40.0f);
+        ki = constrainFloat(ki, 0.1f, 20.0f);
+        kd = constrainFloat(kd, 0.1f, 10.0f);
 
         // 2. update the pid params
         if (xSemaphoreTake(nRF24Mutex, portMAX_DELAY)){
