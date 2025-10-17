@@ -33,6 +33,9 @@ bool main_rx_init(void){
   }
   SPI.endTransaction();
 
+  radio.flush_rx();
+  radio.flush_tx();
+
   Serial.println("radio initialized!");
 
   // --- RADIO SETTINGS TO MATCH TX ---

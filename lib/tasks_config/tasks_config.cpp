@@ -332,7 +332,7 @@ void PIDtask(void* Parameters){
       // rollInput = inputList[1]; // Roll input
       // pitchInput = inputList[2]; // Pitch input
       // yawInput = inputList[3]; // Yaw input
-      throttle = 1500.0f; // Throttle
+      throttle = 1400.0f; // Throttle
       rollInput = 0.0f; // Roll input
       pitchInput = 0.0f; // Pitch input
       yawInput = 0.0f; // Yaw input
@@ -350,6 +350,10 @@ void PIDtask(void* Parameters){
       resetPID(&pidRoll);
       resetPID(&pidPitch);
       resetPID(&pidYaw);
+
+      resetPID(&pidRollRate);
+      resetPID(&pidPitchRate);
+      resetPID(&pidYawRate);
 
       // set motors to 1ms
       TIM2->CCR1 = 1000;
@@ -538,12 +542,13 @@ void RXtask(void* Parameters){
           local_telemetry[3] = (int16_t) telemetry[3]; // altitude
           xSemaphoreGive(telemetryMutex);
         }
-        
-        // Send as ACK payload
-        radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
 
         // radio.read(&buffer, len);
         radio.read(rx_load, sizeof(rx_load)); // read into int16_t list
+        
+        // Send as ACK payload
+        radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
+        radio.flush_tx();   // optional safety
 
         if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
           Serial.print("[nRF24 RX] Received: ");
@@ -565,9 +570,9 @@ void RXtask(void* Parameters){
 
         // 1. store 
         mode = (int)rx_load[0];
-        kp = (float)rx_load[1] / 100.0f; // divide by 100 to get the actual value
-        ki = (float)rx_load[2] / 100.0f;
-        kd = (float)rx_load[3] / 100.0f;
+        kp = (float)rx_load[1] / 100.00f; // divide by 100 to get the actual value
+        ki = (float)rx_load[2] / 100.00f;
+        kd = (float)rx_load[3] / 100.00f;
         kill = (float)rx_load[4];
 
         // clamp the PID gains
@@ -585,17 +590,17 @@ void RXtask(void* Parameters){
           xSemaphoreGive(nRF24Mutex);
         }
 
-        if (mode = 1){ // roll only
+        if (mode == 1){ // roll only
           pidRollRate.kp = kp;
           pidRollRate.ki = ki;
           pidRollRate.kd = kd;
         }
-        if (mode = 2){ // pitch only
+        if (mode == 2){ // pitch only
           pidPitchRate.kp = kp;
           pidPitchRate.ki = ki;
           pidPitchRate.kd = kd;
         }
-        if (mode = 3){ // yaw only
+        if (mode == 3){ // yaw only
           pidYawRate.kp = kp;
           pidYawRate.ki = ki;
           pidYawRate.kd = kd;
