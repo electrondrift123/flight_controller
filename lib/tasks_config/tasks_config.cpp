@@ -515,58 +515,157 @@ void MotorTest(void *Parameters){
 //// Note: 
 //// Coming from the global telemetry[] array in shared_data.h and a float type.
 //// Before it is sent via nRF24, it is converted to int16_t type to save space.
+// void RXtask(void* Parameters){
+//   int16_t local_telemetry[5] = {0, 0, 0, 0, 0}; // Telemetry data to send back
+//   // temporary for testing: {roll, pitch, yaw, altitude, radio_state}
+//   int mode = 1; // 1 = roll, 2 = pitch, 3 = yaw
+//   float kp, ki, kd, kill; 
+
+//   int16_t rx_load[5]; // received data buffer
+//   for (;;) {
+//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for IRQ
+
+//     uint8_t flags = radio.clearStatusFlags();
+
+//     // uint8_t status = radio.get_status();
+//     if (flags & RF24_RX_DR) {
+
+//       while (radio.available()) {
+//         local_telemetry[4] = 1; // 1 = connected, 0 = disconnected
+
+//         // use mutex and read the data for telemetry
+//         if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
+//           local_telemetry[0] = (int16_t) eulerAngles[0]; // roll
+//           local_telemetry[1] = (int16_t) eulerAngles[1]; // pitch
+//           local_telemetry[2] = (int16_t) eulerAngles[2]; // yaw
+//           xSemaphoreGive(eulerAnglesMutex);
+//         }
+//         if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)){
+//           local_telemetry[3] = (int16_t) telemetry[3]; // altitude
+//           xSemaphoreGive(telemetryMutex);
+//         }
+        
+//         // Send as ACK payload
+//         radio.flush_tx();   // optional safety
+//         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
+
+//         radio.read(rx_load, sizeof(rx_load)); // read into int16_t list
+
+//         radio.startListening();
+
+//         if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+//           Serial.print("[nRF24 RX] Received: ");
+//           // Serial.println(rx_load[i]); // int16t list 
+//           for (int i = 0; i < 4; i++) {
+//             Serial.print(rx_load[i]); Serial.print(", ");
+//           }
+//           Serial.println(rx_load[4]);
+//           xSemaphoreGive(serialMutex);
+//         }
+
+//         buzz_on();
+//         vTaskDelay(pdMS_TO_TICKS(10));
+//         buzz_off();
+
+//         //// TODO: process the received data:
+//         //// for pid tuning
+//         // input list: [mode, kp, ki, kd, kill], float type
+
+//         // 1. store 
+//         mode = (int)rx_load[0];
+//         kp = (float)rx_load[1] / 100.00f; // divide by 100 to get the actual value
+//         ki = (float)rx_load[2] / 100.00f;
+//         kd = (float)rx_load[3] / 100.00f;
+//         kill = (float)rx_load[4];
+
+//         // clamp the PID gains
+//         kp = constrainFloat(kp, 1.0f, 40.0f);
+//         ki = constrainFloat(ki, 0.1f, 20.0f);
+//         kd = constrainFloat(kd, 0.1f, 10.0f);
+
+//         // 2. update the pid params
+//         if (xSemaphoreTake(nRF24Mutex, portMAX_DELAY)){
+//           // mode = inputList[0];
+//           // kp = inputList[1];
+//           // ki = inputList[2];
+//           // kd = inputList[3];
+//           inputList[4] = kill; // update kill flag in inputList
+//           xSemaphoreGive(nRF24Mutex);
+//         }
+
+//         if (mode == 1){ // roll only
+//           pidRollRate.kp = kp;
+//           pidRollRate.ki = ki;
+//           pidRollRate.kd = kd;
+//         }
+//         if (mode == 2){ // pitch only
+//           pidPitchRate.kp = kp;
+//           pidPitchRate.ki = ki;
+//           pidPitchRate.kd = kd;
+//         }
+//         if (mode == 3){ // yaw only
+//           pidYawRate.kp = kp;
+//           pidYawRate.ki = ki;
+//           pidYawRate.kd = kd;
+//         }
+        
+//       }
+//     }
+//     // if (flags & RF24_TX_DF) {
+//     //   radio.flush_tx(); // not used on RX-only but good practice
+//     // }
+//   }
+// }
+
 void RXtask(void* Parameters){
-  int16_t local_telemetry[5] = {0, 0, 0, 0, 0}; // Telemetry data to send back
-  // temporary for testing: {roll, pitch, yaw, altitude, radio_state}
-  int mode = 1; // 1 = roll, 2 = pitch, 3 = yaw
-  float kp, ki, kd, kill; 
+  int16_t local_telemetry[5] = {0, 0, 0, 0, 0};
+  int mode = 1;
+  float kp, ki, kd, kill;
+  int16_t rx_load[5];
 
-  int16_t rx_load[5]; // received data buffer
   for (;;) {
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for IRQ
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
+    // ✅ Read + clear status flags
     uint8_t flags = radio.clearStatusFlags();
 
+    // ✅ Handle data ready
     if (flags & RF24_RX_DR) {
       while (radio.available()) {
         local_telemetry[4] = 1; // 1 = connected, 0 = disconnected
 
-        // use mutex and read the data for telemetry
         if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
-          local_telemetry[0] = (int16_t) eulerAngles[0]; // roll
-          local_telemetry[1] = (int16_t) eulerAngles[1]; // pitch
-          local_telemetry[2] = (int16_t) eulerAngles[2]; // yaw
+          local_telemetry[0] = (int16_t) eulerAngles[0];
+          local_telemetry[1] = (int16_t) eulerAngles[1];
+          local_telemetry[2] = (int16_t) eulerAngles[2];
           xSemaphoreGive(eulerAnglesMutex);
         }
-        if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)){
-          local_telemetry[3] = (int16_t) telemetry[3]; // altitude
+        if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)) {
+          local_telemetry[3] = (int16_t) telemetry[3];
           xSemaphoreGive(telemetryMutex);
         }
 
-        // radio.read(&buffer, len);
-        radio.read(rx_load, sizeof(rx_load)); // read into int16_t list
-        
-        // Send as ACK payload
+        // ✅ Write ACK payload BEFORE read
         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
-        radio.flush_tx();   // optional safety
+        
+        // ✅ Read incoming data
+        radio.read(rx_load, sizeof(rx_load));
+        
+        radio.startListening();
 
-        if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-          Serial.print("[nRF24 RX] Received: ");
-          // Serial.println(rx_load[i]); // int16t list 
-          for (int i = 0; i < 4; i++) {
-            Serial.print(rx_load[i]); Serial.print(", ");
-          }
-          Serial.println(rx_load[4]);
-          xSemaphoreGive(serialMutex);
-        }
+        // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+        //   Serial.print("[nRF24 RX] Received: ");
+        //   for (int i = 0; i < 4; i++) {
+        //     Serial.print(rx_load[i]); Serial.print(", ");
+        //   }
+        //   Serial.println(rx_load[4]);
+        //   xSemaphoreGive(serialMutex);
+        // }
 
-        buzz_on();
-        vTaskDelay(pdMS_TO_TICKS(10));
-        buzz_off();
-
-        //// TODO: process the received data:
-        //// for pid tuning
-        // input list: [mode, kp, ki, kd, kill], float type
+        // // ... your PID stuff below ...
+        // buzz_on();
+        // vTaskDelay(pdMS_TO_TICKS(10));
+        // buzz_off();
 
         // 1. store 
         mode = (int)rx_load[0];
@@ -605,15 +704,16 @@ void RXtask(void* Parameters){
           pidYawRate.ki = ki;
           pidYawRate.kd = kd;
         }
-        
       }
     }
 
-    if (flags & RF24_TX_DF) {
-      radio.flush_tx(); // not used on RX-only but good practice
+    // ✅ Optional: catch abnormal TX_ACK behavior
+    if (flags & 0x10) {
+      radio.flush_tx();  // clear stuck packet
     }
   }
 }
+
 
 //// TODO: find ADC pin for this task
 void batteryMonitorTask(void* Parameters){
