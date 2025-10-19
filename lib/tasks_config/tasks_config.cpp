@@ -296,6 +296,11 @@ void PIDtask(void* Parameters){
 
   // counter
   static int altCounter = 0; // altitude counter
+  static int outer_loop_counter = 0;
+
+  float roll_rate_setpoint = 0.00f;
+  float pitch_rate_setpoint = 0.00f;
+  float yaw_rate_setpoint = 0.00f;
 
   vTaskDelay(pdMS_TO_TICKS(3000)); // delay for arming motor
 
@@ -304,6 +309,8 @@ void PIDtask(void* Parameters){
     float dt = (currentTime - previousTime) * portTICK_PERIOD_MS / 1000.0f;
     if (dt <= 0.0f || dt > 0.05f) dt = 0.005f; // clamp dt to a safe range
     previousTime = currentTime;
+
+    outer_loop_counter++;
 
     // read sensors:
     if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)){
@@ -406,11 +413,16 @@ void PIDtask(void* Parameters){
     yawInputFiltered   = alpha * yawInput   + (1 - alpha) * yawInputFiltered;
 
     // PID start:
-    // Outer loop:
+    // Outer loop (30ms):
     // computing desired rates: (only Kp, P-controller):
-    float roll_rate_setpoint = computePID(&pidRoll, rollInputFiltered, roll, dt); // deg/s
-    float pitch_rate_setpoint = computePID(&pidPitch, pitchInputFiltered, pitch, dt); // deg/s
-    float yaw_rate_setpoint = computePID(&pidYaw, yawInputFiltered, yaw, dt); // deg/s
+    if (outer_loop_counter >= 6){
+      roll_rate_setpoint = computePID(&pidRoll, rollInputFiltered, roll, dt); // deg/s
+      pitch_rate_setpoint = computePID(&pidPitch, pitchInputFiltered, pitch, dt); // deg/s
+      yaw_rate_setpoint = computePID(&pidYaw, yawInputFiltered, yaw, dt); // deg/s
+    }
+    if (outer_loop_counter >= 6) {
+      outer_loop_counter = 0; // reset the counter
+    }
 
     // Inner loop: (full PID)
     float roll_rate_correction = computePID(&pidRollRate, roll_rate_setpoint, rollRate, dt);
