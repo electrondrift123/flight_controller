@@ -48,15 +48,15 @@ void setup() {
  
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!
-  // outer loop: P-controller for roll, pitch, yaw angles (unit: deg)
-  initPID(&pidRoll,  10.0f, 1.0f, 0.0f, -180.0f, 180.0f);
-  initPID(&pidPitch, 10.0f, 1.0f, 0.0f, -180.0f, 180.0f);
-  initPID(&pidYaw,   10.1f, 1.0f, 0.0f, -360.0f, 360.0f);
-  // inner loop: PID for rates (unit: deg/sec)
-  initPID(&pidRollRate,  1.0f, 1.0f, 0.0f, -300.0f, 300.0f);
-  initPID(&pidPitchRate, 1.0f, 1.0f, 0.0f, -300.0f, 300.0f);
+  // outer loop: P-controller for roll, pitch, yaw angles (unit: rad)
+  initPID(&pidRoll,  10.0f, 1.0f, 0.0f, -3.14f, 3.14f);
+  initPID(&pidPitch, 10.0f, 1.0f, 0.0f, -3.14f, 3.14f);
+  initPID(&pidYaw,   10.1f, 1.0f, 0.0f, -6.28f, 6.28f);
+  // inner loop: PID for rates (unit: rad/sec)
+  initPID(&pidRollRate,  1.0f, 1.0f, 0.0f, -2.62f, 2.62f);
+  initPID(&pidPitchRate, 1.0f, 1.0f, 0.0f, -2.62f, 2.62f);
   // initPID(&pidYawRate,   8.5f, 0.1f, 0.1f, -250.0f, 250.0f);
-  initPID(&pidYawRate,   0.0f, 0.0f, 0.0f, -45.0f, 45.0f); // for testing in a rod
+  initPID(&pidYawRate,   0.0f, 0.0f, 0.0f, -0.52, 0.52f); // for testing in a rod
 
   // interrupts();
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
@@ -81,5 +81,7 @@ void loop() {
 // - The output ticks for every motor is 1ms
 
 
+// NOTE:
+// 1. input from human: deg, then convert it into rad
 
 

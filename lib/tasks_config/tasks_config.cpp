@@ -236,6 +236,7 @@ void MadgwickTask(void* Parameters) {
       MadgwickGetEuler(&madData);
 
       if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
+        // units: 
         eulerAngles[0] = madData.roll;
         eulerAngles[1] = madData.pitch;
         eulerAngles[2] = madData.yaw;
@@ -316,17 +317,19 @@ void PIDtask(void* Parameters){
 
     // read sensors:
     if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)){
-      roll = eulerAngles[0];
-      pitch = eulerAngles[1];
-      yaw = eulerAngles[2];
+      // units: deg
+      // convert: deg -> rad
+      roll =  eulerAngles[0] * DEG_TO_RAD;
+      pitch = eulerAngles[1] * DEG_TO_RAD;
+      yaw =   eulerAngles[2] * DEG_TO_RAD;
       xSemaphoreGive(eulerAnglesMutex); // release the mutex
     }
     if (xSemaphoreTake(madgwickMutex, portMAX_DELAY)){
       // read Madgwick's data: units: rad
-      // convert: rad -> deg
-      rollRate = MadgwickSensorList[3] * RAD_TO_DEG; // Gyro X
-      pitchRate = MadgwickSensorList[4] * RAD_TO_DEG; // Gyro Y
-      yawRate = MadgwickSensorList[5] * RAD_TO_DEG; // Gyro Z
+      // unit: rad/s
+      rollRate =  MadgwickSensorList[3]; // Gyro X
+      pitchRate = MadgwickSensorList[4]; // Gyro Y
+      yawRate =   MadgwickSensorList[5]; // Gyro Z
       xSemaphoreGive(madgwickMutex); // release the mutex
     }
     if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)){

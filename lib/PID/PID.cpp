@@ -1,5 +1,6 @@
 #include "PID.h"
 
+// Input is in rad
 void initPID(PIDControllerData_t* pid, float kp, float ki, float kd,
              float output_min_limit, float output_max_limit) {
     pid->kp = kp;
@@ -47,10 +48,12 @@ float computePID(PIDControllerData_t* pid, float setpoint, float actual, float d
     pid->prev_error = error;
     pid->prev_derivative = derivative;
 
+    // rad (or rad/s)
     return output;
 }
 
 void resetPID(PIDControllerData_t* pid) {
     pid->integral = 0.0f;
     pid->prev_error = 0.0f;
+    pid->prev_derivative = 0.0f;
 }

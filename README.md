@@ -35,4 +35,4 @@ A real-time, flight controller for STM32F4-based drones, built using FreeRTOS an
 
 
 
-
+Human input from the controller is Angle in Degrees. Then the flight code will convert it into radians for computations.
