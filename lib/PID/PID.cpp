@@ -1,18 +1,17 @@
 #include "PID.h"
 
 void initPID(PIDControllerData_t* pid, float kp, float ki, float kd,
-             float output_min_limit, float output_max_limit,
-             float integral_limit) {
+             float output_min_limit, float output_max_limit) {
     pid->kp = kp;
     pid->ki = ki;
     pid->kd = kd;
 
     pid->output_min_limit = output_min_limit;
     pid->output_max_limit = output_max_limit;
-    pid->integral_limit = integral_limit;
 
     pid->integral = 0.0f;
     pid->prev_error = 0.0f;
+    pid->prev_derivative = 0.0f;
 
     pid->setpoint = 0.0f; // Initialize setpoint to zero
 }
@@ -20,15 +19,18 @@ void initPID(PIDControllerData_t* pid, float kp, float ki, float kd,
 float computePID(PIDControllerData_t* pid, float setpoint, float actual, float dt) {
     float error = setpoint - actual;
 
-    // Integral term with anti-windup
+    // Integral term with anti-windup: hard reset!
     pid->integral += error * dt;
-    if (pid->integral > pid->integral_limit)
-        pid->integral = pid->integral_limit;
-    else if (pid->integral < -pid->integral_limit)
-        pid->integral = -pid->integral_limit;
 
-    // Derivative term
+    if (pid->integral > pid->output_max_limit)
+        pid->integral = 0.0f;
+    else if (pid->integral < pid->output_min_limit)
+        pid->integral = 0.0f;
+
+    // Derivative term with LPF
     float derivative = (error - pid->prev_error) / dt;
+    float alpha = 0.8;      // ADJUSTABLE
+    derivative = alpha * derivative + (1 - alpha) * pid->prev_derivative;
 
     // PID Output
     float output = (pid->kp * error) +
@@ -43,6 +45,7 @@ float computePID(PIDControllerData_t* pid, float setpoint, float actual, float d
 
     // Save error for next cycle
     pid->prev_error = error;
+    pid->prev_derivative = derivative;
 
     return output;
 }

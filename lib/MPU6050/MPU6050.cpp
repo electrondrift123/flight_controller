@@ -54,9 +54,9 @@ bool MPU6050_read(mpu6050Data_t* d) {
   d->ay = ay / MPU6050_ACCEL_SENSITIVITY;
   d->az = az / MPU6050_ACCEL_SENSITIVITY - 0.25f;
 
-  d->wx  = (gx / MPU6050_GYRO_SENSITIVITY) * DEG_TO_RAD;
+  d->wx   = (gx / MPU6050_GYRO_SENSITIVITY) * DEG_TO_RAD;
   d->wy = - (gy / MPU6050_GYRO_SENSITIVITY) * DEG_TO_RAD;
-  d->wz   = - (gz / MPU6050_GYRO_SENSITIVITY) * DEG_TO_RAD;
+  d->wz = - (gz / MPU6050_GYRO_SENSITIVITY) * DEG_TO_RAD;
 
   d->angleRoll = atan2f(d->ay, sqrtf(d->ax * d->ax + d->az * d->az)) * RAD_TO_DEG;
   d->anglePitch = atan2f(-d->ax, sqrtf(d->ay * d->ay + d->az * d->az)) * RAD_TO_DEG;
