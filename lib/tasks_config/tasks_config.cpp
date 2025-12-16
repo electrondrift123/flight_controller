@@ -433,14 +433,21 @@ void PIDtask(void* Parameters){
     float pitch_rate_correction = computePID(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt);
     float yaw_rate_correction = computePID(&pidYawRate, yaw_rate_setpoint, yawRate, dt);
 
+    float R_norm = roll_rate_correction / U_MAX_ROLL_RATE;
+    float P_norm = pitch_rate_correction / U_MAX_PITCH_RATE;
+    float Y_norm = yaw_rate_correction / U_MAX_YAW_RATE;
+
+    float R_mix = constrainFloat(R_norm, -1.00f, 1.00f) * U_MAX_ROLL_RATE;
+    float P_mix = constrainFloat(P_norm, -1.00f, 1.00f) * U_MAX_PITCH_RATE;
+    float Y_mix = constrainFloat(Y_norm, -1.00f, 1.00f) * U_MAX_YAW_RATE;
+
     // PID end.
     throttleFiltered = constrainFloat(throttleFiltered, 1400.0f, 1800.0f);
-    //// TODO: add gain for the rate corrections
     // Motor Mixer Algorithm (Props-out), (not yet tested):
-    float motor1_output = throttleFiltered + roll_rate_correction + pitch_rate_correction + yaw_rate_correction; // Front Left
-    float motor2_output = throttleFiltered - roll_rate_correction + pitch_rate_correction - yaw_rate_correction; // Front Right
-    float motor3_output = throttleFiltered + roll_rate_correction - pitch_rate_correction - yaw_rate_correction; // Back Left
-    float motor4_output = throttleFiltered - roll_rate_correction - pitch_rate_correction + yaw_rate_correction; // Back Right
+    float motor1_output = throttleFiltered + R_mix + P_mix + Y_mix; // Front Left
+    float motor2_output = throttleFiltered - R_mix + P_mix - Y_mix; // Front Right
+    float motor3_output = throttleFiltered + R_mix - P_mix - Y_mix; // Back Left
+    float motor4_output = throttleFiltered - R_mix - P_mix + Y_mix; // Back Right
     
     // Failsafe & Limit motor outputs to the range [1000, 2000]:
     // Disable PID correction when throttle is low and drone is likely landed:
@@ -467,28 +474,28 @@ void PIDtask(void* Parameters){
     TIM2->CCR4 = (uint16_t)motor4_output;
 
     // // Debugging output: Temporary -> uncomment it in deployment!
-    if (print_counter >= 20){ // 100ms}
-      // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-      // // PID tuning Starts (FC only)
-      // // roll: [setpoint, actual, correction, current time in ms, P_val]
-      // Serial.print("0"); Serial.print(", ");
-      // Serial.print(roll); Serial.print(", "); 
-      // Serial.print(roll_correction); Serial.print(", ");
-      // Serial.print(currentTime * portTICK_PERIOD_MS); Serial.print(", ");
-      // Serial.println("1.00");
+    // if (print_counter >= 20){ // 100ms}
+    //   // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+    //   // // PID tuning Starts (FC only)
+    //   // // roll: [setpoint, actual, correction, current time in ms, P_val]
+    //   // Serial.print("0"); Serial.print(", ");
+    //   // Serial.print(roll); Serial.print(", "); 
+    //   // Serial.print(roll_correction); Serial.print(", ");
+    //   // Serial.print(currentTime * portTICK_PERIOD_MS); Serial.print(", ");
+    //   // Serial.println("1.00");
 
-      // Serial.println(roll_rate_correction);
+    //   // Serial.println(roll_rate_correction);
 
-      Serial.print(roll); Serial.print(", ");
-      Serial.print(motor1_output); Serial.print(", ");
-      Serial.print(motor2_output); Serial.print(", ");
-      Serial.print(motor3_output); Serial.print(", ");
-      Serial.println(motor4_output); 
+    //   Serial.print(roll); Serial.print(", ");
+    //   Serial.print(motor1_output); Serial.print(", ");
+    //   Serial.print(motor2_output); Serial.print(", ");
+    //   Serial.print(motor3_output); Serial.print(", ");
+    //   Serial.println(motor4_output); 
 
-      // xSemaphoreGive(serialMutex);
-      // }
-      print_counter = 0; // reset the counter
-    }
+    //   // xSemaphoreGive(serialMutex);
+    //   // }
+    //   print_counter = 0; // reset the counter
+    // }
     vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
 }

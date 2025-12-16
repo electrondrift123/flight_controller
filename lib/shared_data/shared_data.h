@@ -10,6 +10,19 @@
 #include "Madgwick.h"
 #include "PID.h"
 
+// Constants
+#define PI 3.1415f
+
+// outer loop (desired angular rate in rad/s): 90 deg/sec
+#define U_MAX_ROLL     PI / 2.0f
+#define U_MAX_PITCH    PI / 2.0f
+#define U_MAX_YAW      PI / 4.0f
+
+// inner loop: it is pwm ticks in us for authority 
+#define U_MAX_ROLL_RATE     500.0f
+#define U_MAX_PITCH_RATE    500.0f
+#define U_MAX_YAW_RATE      300.0f
+
 // Global shared sensor data
 extern mpu6050Data_t mpuData;
 extern magData_t     magData;

@@ -11,7 +11,7 @@
 #include "tasks_config.h"
 #include "sync.h"
 #include "sensors.h"
-// #include "shared_data.h"
+#include "shared_data.h"
 #include "main_rx.h" // Include main_rx for nRF24 radio handling
 #include "PID.h"
 #include "WDT.h"
@@ -49,14 +49,13 @@ void setup() {
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!
   // outer loop: P-controller for roll, pitch, yaw angles (unit: rad)
-  initPID(&pidRoll,  10.0f, 1.0f, 0.0f, -3.14f, 3.14f);
-  initPID(&pidPitch, 10.0f, 1.0f, 0.0f, -3.14f, 3.14f);
-  initPID(&pidYaw,   10.1f, 1.0f, 0.0f, -6.28f, 6.28f);
+  initPID(&pidRoll,  10.0f, 1.0f, 0.0f, -U_MAX_ROLL, U_MAX_ROLL);
+  initPID(&pidPitch, 10.0f, 1.0f, 0.0f, -U_MAX_PITCH, U_MAX_PITCH);
+  initPID(&pidYaw,   10.1f, 1.0f, 0.0f, -U_MAX_YAW, U_MAX_YAW);
   // inner loop: PID for rates (unit: rad/sec)
-  initPID(&pidRollRate,  1.0f, 1.0f, 0.0f, -2.62f, 2.62f);
-  initPID(&pidPitchRate, 1.0f, 1.0f, 0.0f, -2.62f, 2.62f);
-  // initPID(&pidYawRate,   8.5f, 0.1f, 0.1f, -250.0f, 250.0f);
-  initPID(&pidYawRate,   0.0f, 0.0f, 0.0f, -0.52, 0.52f); // for testing in a rod
+  initPID(&pidRollRate,  1.0f, 1.0f, 0.0f, -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
+  initPID(&pidPitchRate, 1.0f, 1.0f, 0.0f, -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
+  initPID(&pidYawRate,   0.0f, 0.0f, 0.0f, -U_MAX_YAW_RATE, U_MAX_YAW_RATE); // zero for testing in a rod
 
   // interrupts();
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
@@ -70,12 +69,11 @@ void setup() {
 
 void loop() {
   // empty
-  // Do not put vTaskDelay() or any other blocking code here.
+  // Do not put vTaskDelay() or any other blocking code here!!!
 }
 
-
 //// TODO:
-// 1. debug the PID logic
+// 1. debug the PID logic: map the torque comman into pwm ticks!
 
 // Note: 
 // - The output ticks for every motor is 1ms
