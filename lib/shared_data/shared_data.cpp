@@ -6,14 +6,14 @@ magData_t     magData;
 bmp280Data_t  bmpData;
 MadgwickData_t madData;
 
-PIDControllerData_t pidRoll;
-PIDControllerData_t pidPitch;
-PIDControllerData_t pidYaw;
+LyGAPIDControllerData_t pidRoll;
+LyGAPIDControllerData_t pidPitch;
+LyGAPIDControllerData_t pidYaw;
 PIDControllerData_t pidThrottle; // for altitude hold
 
-PIDControllerData_t pidRollRate;
-PIDControllerData_t pidPitchRate;
-PIDControllerData_t pidYawRate;
+LyGAPIDControllerData_t pidRollRate;
+LyGAPIDControllerData_t pidPitchRate;
+LyGAPIDControllerData_t pidYawRate;
 
 volatile float eulerAngles[3] = {0.0f, 0.0f, 0.0f};
 

@@ -23,14 +23,9 @@ float computePID(PIDControllerData_t* pid, float setpoint, float actual, float d
     // Integral term with anti-windup: hard reset!
     pid->integral += error * dt;
 
-    if (pid->integral > pid->output_max_limit)
-        pid->integral = 0.0f;
-    else if (pid->integral < pid->output_min_limit)
-        pid->integral = 0.0f;
-
     // Derivative term with LPF
     float derivative = (error - pid->prev_error) / dt;
-    float alpha = 0.8;      // ADJUSTABLE
+    float alpha = 0.2;      // ADJUSTABLE
     derivative = alpha * derivative + (1 - alpha) * pid->prev_derivative;
 
     // PID Output
@@ -38,11 +33,15 @@ float computePID(PIDControllerData_t* pid, float setpoint, float actual, float d
                    (pid->ki * pid->integral) +
                    (pid->kd * derivative);
 
-    // Output limiting
-    if (output > pid->output_max_limit)
+    // Output limiting and anti windup
+    if (output > pid->output_max_limit){
+        pid->integral = pid->output_max_limit - pid->kp * error - pid->kd * derivative;
         output = pid->output_max_limit;
-    else if (output < pid->output_min_limit)
+    }
+    else if (output < pid->output_min_limit){
+        pid->integral = pid->output_min_limit - pid->kp * error - pid->kd * derivative;
         output = pid->output_min_limit;
+    }
 
     // Save error for next cycle
     pid->prev_error = error;

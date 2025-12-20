@@ -9,6 +9,7 @@
 #include "BMP280.h"
 #include "Madgwick.h"
 #include "PID.h"
+#include "LyGAPID.h"
 
 // Constants
 #define PI 3.1415f
@@ -23,26 +24,46 @@
 #define U_MAX_PITCH_RATE    500.0f
 #define U_MAX_YAW_RATE      300.0f
 
+// Adaptive PID config:
+#define GAMMA_B         3e-3f
+#define SIGMA           0.01f
+#define B_SIGN          1.0f
+#define CONTROLLER_MODE 0.0f
+
+// Initial PID Gains:
+#define P   1.0f
+#define I   1.0f
+
+#define KP  1.0f
+#define KI  1.0f
+#define KD  1.0f
+
 // Global shared sensor data
 extern mpu6050Data_t mpuData;
 extern magData_t     magData;
 extern bmp280Data_t  bmpData;
 extern MadgwickData_t madData;
 
-// Angle Mode 
-extern PIDControllerData_t pidRoll;
-extern PIDControllerData_t pidPitch;
-extern PIDControllerData_t pidYaw;
+// // Angle Mode 
+// extern PIDControllerData_t pidRoll;
+// extern PIDControllerData_t pidPitch;
+// extern PIDControllerData_t pidYaw;
 extern PIDControllerData_t pidThrottle; // for altitude hold
 
-extern PIDControllerData_t pidRollRate;
-extern PIDControllerData_t pidPitchRate;
-extern PIDControllerData_t pidYawRate;
+// extern PIDControllerData_t pidRollRate;
+// extern PIDControllerData_t pidPitchRate;
+// extern PIDControllerData_t pidYawRate;
+
+// Adaptive PID
+extern LyGAPIDControllerData_t pidRoll;
+extern LyGAPIDControllerData_t pidPitch;
+extern LyGAPIDControllerData_t pidYaw;
+
+extern LyGAPIDControllerData_t pidRollRate;
+extern LyGAPIDControllerData_t pidPitchRate;
+extern LyGAPIDControllerData_t pidYawRate;
 
 // PID params
-
-
-//// TODO: rate Mode to be added
 
 // Euler angles output from filter
 extern volatile float eulerAngles[3];

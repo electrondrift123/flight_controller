@@ -17,6 +17,7 @@
 #include "main_rx.h"
 
 #include "PID.h"
+#include "LyGAPID.h"
 #include "WDT.h"
 
 // Complementary filter for altitude estimation
@@ -359,13 +360,13 @@ void PIDtask(void* Parameters){
 
     // ====== SHUTDOWN MOTORS ======
     if (KILL_MOTORS) {
-      resetPID(&pidRoll);
-      resetPID(&pidPitch);
-      resetPID(&pidYaw);
+      resetLyGAPID(&pidRoll);
+      resetLyGAPID(&pidPitch);
+      resetLyGAPID(&pidYaw);
 
-      resetPID(&pidRollRate);
-      resetPID(&pidPitchRate);
-      resetPID(&pidYawRate);
+      resetLyGAPID(&pidRollRate);
+      resetLyGAPID(&pidPitchRate);
+      resetLyGAPID(&pidYawRate);
 
       // set motors to 1ms
       TIM2->CCR1 = 1000;
@@ -419,19 +420,19 @@ void PIDtask(void* Parameters){
 
     // PID start:
     // Outer loop (30ms):
-    // computing desired rates: (only Kp, P-controller):
+    // computing desired rates: (PI-controller):
     if (outer_loop_counter >= 6){ // 33.33 Hz
-      roll_rate_setpoint = computePID(&pidRoll, rollInputFiltered, roll, 6.0f * dt); // deg/s
-      pitch_rate_setpoint = computePID(&pidPitch, pitchInputFiltered, pitch, 6.0f * dt); // deg/s
-      yaw_rate_setpoint = computePID(&pidYaw, yawInputFiltered, yaw, 6.0f * dt); // deg/s
+      roll_rate_setpoint = computeLyGAPID_out(&pidRoll, rollInputFiltered, roll, 6.0f * dt); // deg/s
+      pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, 6.0f * dt); // deg/s
+      yaw_rate_setpoint = computeLyGAPID_out(&pidYaw, yawInputFiltered, yaw, 6.0f * dt); // deg/s
 
       outer_loop_counter = 0; // reset the counter
     }
 
     // Inner loop: (full PID): 200 Hz
-    float roll_rate_correction = computePID(&pidRollRate, roll_rate_setpoint, rollRate, dt);
-    float pitch_rate_correction = computePID(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt);
-    float yaw_rate_correction = computePID(&pidYawRate, yaw_rate_setpoint, yawRate, dt);
+    float roll_rate_correction = computeLyGAPID_in(&pidRollRate, roll_rate_setpoint, rollRate, dt);
+    float pitch_rate_correction = computeLyGAPID_in(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt);
+    float yaw_rate_correction = computeLyGAPID_in(&pidYawRate, yaw_rate_setpoint, yawRate, dt);
 
     float R_norm = roll_rate_correction / U_MAX_ROLL_RATE;
     float P_norm = pitch_rate_correction / U_MAX_PITCH_RATE;
@@ -439,7 +440,7 @@ void PIDtask(void* Parameters){
 
     float R_mix = constrainFloat(R_norm, -1.00f, 1.00f) * U_MAX_ROLL_RATE;
     float P_mix = constrainFloat(P_norm, -1.00f, 1.00f) * U_MAX_PITCH_RATE;
-    float Y_mix = constrainFloat(Y_norm, -1.00f, 1.00f) * U_MAX_YAW_RATE;
+    float Y_mix = constrainFloat(Y_norm, -1.00f, 1.00f) * U_MAX_YAW_RATE * 0.0f;
 
     // PID end.
     throttleFiltered = constrainFloat(throttleFiltered, 1400.0f, 1800.0f);
@@ -452,13 +453,13 @@ void PIDtask(void* Parameters){
     // Failsafe & Limit motor outputs to the range [1000, 2000]:
     // Disable PID correction when throttle is low and drone is likely landed:
     if (!ALT_H && throttleFiltered < 1100.0f) {
-      resetPID(&pidRoll);
-      resetPID(&pidPitch);
-      resetPID(&pidYaw);
+      resetLyGAPID(&pidRoll);
+      resetLyGAPID(&pidPitch);
+      resetLyGAPID(&pidYaw);
 
-      resetPID(&pidRollRate);
-      resetPID(&pidPitchRate);
-      resetPID(&pidYawRate);
+      resetLyGAPID(&pidRollRate);
+      resetLyGAPID(&pidPitchRate);
+      resetLyGAPID(&pidYawRate);
       motor1_output = motor2_output = motor3_output = motor4_output = 1000.0f;
     } else {
       motor1_output = constrainFloat(motor1_output, 1000.0f, 2000.0f);
@@ -597,19 +598,19 @@ void RXtask(void* Parameters){
         }
 
         if (mode == 1){ // roll only
-          pidRollRate.kp = kp;
-          pidRollRate.ki = ki;
-          pidRollRate.kd = kd;
+          pidRollRate.Kp = kp;
+          pidRollRate.Ki = ki;
+          pidRollRate.Kd = kd;
         }
         if (mode == 2){ // pitch only
-          pidPitchRate.kp = kp;
-          pidPitchRate.ki = ki;
-          pidPitchRate.kd = kd;
+          pidPitchRate.Kp = kp;
+          pidPitchRate.Ki = ki;
+          pidPitchRate.Kd = kd;
         }
         if (mode == 3){ // yaw only
-          pidYawRate.kp = kp;
-          pidYawRate.ki = ki;
-          pidYawRate.kd = kd;
+          pidYawRate.Kp = kp;
+          pidYawRate.Ki = ki;
+          pidYawRate.Kd = kd;
         }
       }
     }

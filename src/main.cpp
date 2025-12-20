@@ -48,14 +48,24 @@ void setup() {
  
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!
+  // // outer loop: P-controller for roll, pitch, yaw angles (unit: rad)
+  // initPID(&pidRoll,  10.0f, 1.0f, 0.0f, -U_MAX_ROLL, U_MAX_ROLL);
+  // initPID(&pidPitch, 10.0f, 1.0f, 0.0f, -U_MAX_PITCH, U_MAX_PITCH);
+  // initPID(&pidYaw,   10.1f, 1.0f, 0.0f, -U_MAX_YAW, U_MAX_YAW);
+  // // inner loop: PID for rates (unit: rad/sec)
+  // initPID(&pidRollRate,  1.0f, 1.0f, 0.0f, -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
+  // initPID(&pidPitchRate, 1.0f, 1.0f, 0.0f, -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
+  // initPID(&pidYawRate,   0.0f, 0.0f, 0.0f, -U_MAX_YAW_RATE, U_MAX_YAW_RATE); // zero for testing in a rod
+
   // outer loop: P-controller for roll, pitch, yaw angles (unit: rad)
-  initPID(&pidRoll,  10.0f, 1.0f, 0.0f, -U_MAX_ROLL, U_MAX_ROLL);
-  initPID(&pidPitch, 10.0f, 1.0f, 0.0f, -U_MAX_PITCH, U_MAX_PITCH);
-  initPID(&pidYaw,   10.1f, 1.0f, 0.0f, -U_MAX_YAW, U_MAX_YAW);
+  initLyGAPID(&pidRoll,  P, I, 0.0f, B_SIGN, GAMMA_B, SIGMA, U_MAX_ROLL, CONTROLLER_MODE);
+  initLyGAPID(&pidPitch, P, I, 0.0f, B_SIGN, GAMMA_B, SIGMA, U_MAX_PITCH, CONTROLLER_MODE);
+  initLyGAPID(&pidYaw,   P, I, 0.0f, B_SIGN, GAMMA_B, SIGMA, U_MAX_YAW, CONTROLLER_MODE);
+
   // inner loop: PID for rates (unit: rad/sec)
-  initPID(&pidRollRate,  1.0f, 1.0f, 0.0f, -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
-  initPID(&pidPitchRate, 1.0f, 1.0f, 0.0f, -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
-  initPID(&pidYawRate,   0.0f, 0.0f, 0.0f, -U_MAX_YAW_RATE, U_MAX_YAW_RATE); // zero for testing in a rod
+  initLyGAPID(&pidRollRate,  KP, KI, KD, B_SIGN, GAMMA_B, SIGMA, U_MAX_ROLL_RATE, CONTROLLER_MODE);
+  initLyGAPID(&pidPitchRate, KP, KI, KD, B_SIGN, GAMMA_B, SIGMA, U_MAX_PITCH_RATE, CONTROLLER_MODE);
+  initLyGAPID(&pidYawRate,   KP, KI, KD, B_SIGN, GAMMA_B, SIGMA, U_MAX_YAW_RATE, CONTROLLER_MODE); // zero for testing in a rod
 
   // interrupts();
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
