@@ -99,7 +99,6 @@ void watchdogTask(void* parameters) {
   }
 }
 
-
 void blinkTask(void *pvParameters) {
   TickType_t interval = pdMS_TO_TICKS(1000); // 500 ms interval
   for(;;){
@@ -184,10 +183,10 @@ void readSensorsTask(void* Parameters) {
 
     // // debug printf
     // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-      // Serial.print("Euler: ");
-      // Serial.print(madData.roll); Serial.print(", ");
-      // Serial.print(madData.pitch); Serial.print(", ");
-      // Serial.println(madData.yaw);
+    //   Serial.print("Euler: ");
+    //   Serial.print(madData.roll); Serial.print(", ");
+    //   Serial.print(madData.pitch); Serial.print(", ");
+    //   Serial.println(madData.yaw);
 
     //   Serial.print("Altitude: "); Serial.println(altSmooth);
     //   xSemaphoreGive(serialMutex);
@@ -272,7 +271,7 @@ void MadgwickTask(void* Parameters) {
 void PIDtask(void* Parameters){
   TickType_t lastWakeTime = xTaskGetTickCount();
   TickType_t previousTime = lastWakeTime; // Initialize previous time
-  TickType_t interval = pdMS_TO_TICKS(5); // 200 Hz
+  TickType_t interval = pdMS_TO_TICKS(4); // 250 Hz
 
   float altitude;
   float roll, pitch, yaw; // local variables for Euler Angles
@@ -304,6 +303,15 @@ void PIDtask(void* Parameters){
   float roll_rate_setpoint = 0.00f;
   float pitch_rate_setpoint = 0.00f;
   float yaw_rate_setpoint = 0.00f;
+
+  float motor_cmd[4] = {1000.0f, 1000.0f, 1000.0f, 1000.0f};
+  float cmd_bias = 1000.0f;
+
+  // Hold min for arming
+  TIM2->CCR1 = (uint16_t)motor_cmd[0];
+  TIM2->CCR2 = (uint16_t)motor_cmd[1];
+  TIM2->CCR3 = (uint16_t)motor_cmd[2];
+  TIM2->CCR4 = (uint16_t)motor_cmd[3];
 
   vTaskDelay(pdMS_TO_TICKS(3000)); // delay for arming motor
 
@@ -342,10 +350,10 @@ void PIDtask(void* Parameters){
     if (xSemaphoreTake(nRF24Mutex, portMAX_DELAY)){
       // read user input here
       // throttle = inputList[0]; // Throttle
-      // rollInput = inputList[1]; // Roll input
+      // yawInput = inputList[1]; // Yaw Rate input
       // pitchInput = inputList[2]; // Pitch input
-      // yawInput = inputList[3]; // Yaw input
-      throttle = 1400.0f; // Throttle
+      // rollInput = inputList[3]; // Roll input
+      throttle = 400.0f; // Throttle
       rollInput = 0.0f; // Roll input
       pitchInput = 0.0f; // Pitch input
       yawInput = 0.0f; // Yaw input
@@ -421,82 +429,101 @@ void PIDtask(void* Parameters){
     // PID start:
     // Outer loop (30ms):
     // computing desired rates: (PI-controller):
-    if (outer_loop_counter >= 6){ // 33.33 Hz
+    if (outer_loop_counter >= 5){ // 50 Hz
       roll_rate_setpoint = computeLyGAPID_out(&pidRoll, rollInputFiltered, roll, 6.0f * dt); // deg/s
       pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, 6.0f * dt); // deg/s
-      yaw_rate_setpoint = computeLyGAPID_out(&pidYaw, yawInputFiltered, yaw, 6.0f * dt); // deg/s
+      // yaw_rate_setpoint = computeLyGAPID_out(&pidYaw, yawInputFiltered, yaw, 6.0f * dt); // deg/s
 
       outer_loop_counter = 0; // reset the counter
     }
 
-    // Inner loop: (full PID): 200 Hz
+    yaw_rate_setpoint = yawInputFiltered; // deg/s (YAW RATE CMD)
+
+    // Inner loop: (full PID): 250 Hz
     float roll_rate_correction = computeLyGAPID_in(&pidRollRate, roll_rate_setpoint, rollRate, dt);
     float pitch_rate_correction = computeLyGAPID_in(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt);
     float yaw_rate_correction = computeLyGAPID_in(&pidYawRate, yaw_rate_setpoint, yawRate, dt);
 
-    float R_norm = roll_rate_correction / U_MAX_ROLL_RATE;
-    float P_norm = pitch_rate_correction / U_MAX_PITCH_RATE;
-    float Y_norm = yaw_rate_correction / U_MAX_YAW_RATE;
-
-    float R_mix = constrainFloat(R_norm, -1.00f, 1.00f) * U_MAX_ROLL_RATE;
-    float P_mix = constrainFloat(P_norm, -1.00f, 1.00f) * U_MAX_PITCH_RATE;
-    float Y_mix = constrainFloat(Y_norm, -1.00f, 1.00f) * U_MAX_YAW_RATE * 0.0f;
+    float R_mix = constrainFloat(roll_rate_correction, -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
+    float P_mix = constrainFloat(pitch_rate_correction, -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
+    float Y_mix = constrainFloat(yaw_rate_correction, -U_MAX_YAW_RATE, U_MAX_YAW_RATE) * 0.0f;
 
     // PID end.
-    throttleFiltered = constrainFloat(throttleFiltered, 1400.0f, 1800.0f);
+    throttleFiltered = constrainFloat(throttleFiltered, 0.0f, 700.0f);
     // Motor Mixer Algorithm (Props-out), (not yet tested):
-    float motor1_output = throttleFiltered + R_mix + P_mix + Y_mix; // Front Left
-    float motor2_output = throttleFiltered - R_mix + P_mix - Y_mix; // Front Right
-    float motor3_output = throttleFiltered + R_mix - P_mix - Y_mix; // Back Left
-    float motor4_output = throttleFiltered - R_mix - P_mix + Y_mix; // Back Right
+    motor_cmd[0] = cmd_bias + throttleFiltered + R_mix + P_mix + Y_mix; // Front Left
+    motor_cmd[1] = cmd_bias + throttleFiltered - R_mix + P_mix - Y_mix; // Front Right
+    motor_cmd[2] = cmd_bias + throttleFiltered + R_mix - P_mix - Y_mix; // Back Left
+    motor_cmd[3] = cmd_bias + throttleFiltered - R_mix - P_mix + Y_mix; // Back Right
     
     // Failsafe & Limit motor outputs to the range [1000, 2000]:
     // Disable PID correction when throttle is low and drone is likely landed:
-    if (!ALT_H && throttleFiltered < 1100.0f) {
+    if (!ALT_H && throttleFiltered < 1050.0f) {
       resetLyGAPID(&pidRoll);
       resetLyGAPID(&pidPitch);
-      resetLyGAPID(&pidYaw);
 
       resetLyGAPID(&pidRollRate);
       resetLyGAPID(&pidPitchRate);
       resetLyGAPID(&pidYawRate);
-      motor1_output = motor2_output = motor3_output = motor4_output = 1000.0f;
+
+      for (int i = 0; i < 4; i++) {
+        motor_cmd[i] = 1000.0f;
+      }
     } else {
-      motor1_output = constrainFloat(motor1_output, 1000.0f, 2000.0f);
-      motor2_output = constrainFloat(motor2_output, 1000.0f, 2000.0f);
-      motor3_output = constrainFloat(motor3_output, 1000.0f, 2000.0f);
-      motor4_output = constrainFloat(motor4_output, 1000.0f, 2000.0f);
+      // Dynamic mixer:
+      if (motor_cmd[0] > 2000.0f || motor_cmd[1] > 2000.0f ||
+          motor_cmd[2] > 2000.0f || motor_cmd[3] > 2000.0f) {
+        // Find the maximum command
+        float maxCmd = motor_cmd[0];
+        for (int i = 1; i < 4; i++) {
+          if (motor_cmd[i] > maxCmd) {
+            maxCmd = motor_cmd[i];
+          }
+        }
+        // Calculate the excess amount
+        float excess = maxCmd - 2000.0f;
+        // Reduce all commands by the excess amount
+        for (int i = 0; i < 4; i++) {
+          motor_cmd[i] -= excess;
+        }
+      }
+
+      // Hard Clamp
+      for (int i = 0; i < 4; i++) {
+        motor_cmd[i] = constrainFloat(motor_cmd[i], 1000.0f, 2000.0f);
+      }
     }
 
     // Motor Output:
-    TIM2->CCR1 = (uint16_t)motor1_output;
-    TIM2->CCR2 = (uint16_t)motor2_output;
-    TIM2->CCR3 = (uint16_t)motor3_output;
-    TIM2->CCR4 = (uint16_t)motor4_output;
+    TIM2->CCR1 = (uint16_t)motor_cmd[0];
+    TIM2->CCR2 = (uint16_t)motor_cmd[1];
+    TIM2->CCR3 = (uint16_t)motor_cmd[2];
+    TIM2->CCR4 = (uint16_t)motor_cmd[3];
 
-    // // Debugging output: Temporary -> uncomment it in deployment!
-    // if (print_counter >= 20){ // 100ms}
-    //   // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-    //   // // PID tuning Starts (FC only)
-    //   // // roll: [setpoint, actual, correction, current time in ms, P_val]
-    //   // Serial.print("0"); Serial.print(", ");
-    //   // Serial.print(roll); Serial.print(", "); 
-    //   // Serial.print(roll_correction); Serial.print(", ");
-    //   // Serial.print(currentTime * portTICK_PERIOD_MS); Serial.print(", ");
-    //   // Serial.println("1.00");
+    // Debugging output: Temporary -> uncomment it in deployment!
+    if (print_counter >= 20){ // 100ms}
+      // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
 
-    //   // Serial.println(roll_rate_correction);
+      // // MOTOR output (unitless: hardware based)
+      // Serial.print(motor1_output); Serial.print(", ");
+      // Serial.print(motor2_output); Serial.print(", ");
+      // Serial.print(motor3_output); Serial.print(", ");
+      // Serial.println(motor4_output); 
 
-    //   Serial.print(roll); Serial.print(", ");
-    //   Serial.print(motor1_output); Serial.print(", ");
-    //   Serial.print(motor2_output); Serial.print(", ");
-    //   Serial.print(motor3_output); Serial.print(", ");
-    //   Serial.println(motor4_output); 
+      // Roll mixer output:
+      Serial.print("Roll: "); Serial.print(roll * (180.0f / 3.1415f));
+      Serial.print(", R_mix: "); Serial.println(R_mix);
 
-    //   // xSemaphoreGive(serialMutex);
-    //   // }
-    //   print_counter = 0; // reset the counter
-    // }
+      Serial.print("PI gains: "); Serial.println(pidRoll.Kp); 
+
+      Serial.print("PID gains: "); Serial.print(pidRollRate.Kp); Serial.print(", ");
+      Serial.print(pidRollRate.Ki); Serial.print(", "); Serial.println(pidRollRate.Kd); 
+
+
+      // xSemaphoreGive(serialMutex);
+      // }
+      print_counter = 0; // reset the counter
+    }
     vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
 }
@@ -532,8 +559,9 @@ void MotorTest(void *Parameters){
 
 void RXtask(void* Parameters){
   int16_t local_telemetry[5] = {0, 0, 0, 0, 0};
-  int mode = 1;
-  float kp, ki, kd, kill;
+  int mode = 0;
+  // float kp, ki, kd, kill;
+  float Tcmd, Ycmd, Pcmd, Rcmd, killcmd;
   int16_t rx_load[5];
 
   for (;;) {
@@ -575,17 +603,24 @@ void RXtask(void* Parameters){
         //   xSemaphoreGive(serialMutex);
         // }
 
-        // 1. store 
-        mode = (int)rx_load[0];
-        kp = (float)rx_load[1] / 100.00f; // divide by 100 to get the actual value
-        ki = (float)rx_load[2] / 100.00f;
-        kd = (float)rx_load[3] / 100.00f;
-        kill = (float)rx_load[4];
+        // // 1. store 
+        // mode = (int)rx_load[0];
+        // kp = (float)rx_load[1] / 100.00f; // divide by 100 to get the actual value
+        // ki = (float)rx_load[2] / 100.00f;
+        // kd = (float)rx_load[3] / 100.00f;
+        // int16_t -> float data (scaled back by 1/100):
+        Tcmd = (float)rx_load[0] * 10.0f; // (0-100%: 0-1000 us tick)
+        Ycmd = (float)rx_load[1] / 100.0f;
+        Pcmd = (float)rx_load[2] / 100.0f;
+        Rcmd = (float)rx_load[3] / 100.0f;
+        killcmd = (float)rx_load[4];
 
-        // clamp the PID gains
-        kp = constrainFloat(kp, 1.0f, 40.0f);
-        ki = constrainFloat(ki, 0.0f, 20.0f);
-        kd = constrainFloat(kd, 0.0f, 10.0f);
+        //// TODO: Process the data: 
+
+        // // clamp the PID gains
+        // kp = constrainFloat(kp, 1.0f, 40.0f);
+        // ki = constrainFloat(ki, 0.0f, 20.0f);
+        // kd = constrainFloat(kd, 0.0f, 10.0f);
 
         // 2. update the pid params
         if (xSemaphoreTake(nRF24Mutex, portMAX_DELAY)){
@@ -593,25 +628,30 @@ void RXtask(void* Parameters){
           // kp = inputList[1];
           // ki = inputList[2];
           // kd = inputList[3];
-          inputList[4] = kill; // update kill flag in inputList
+          
+          inputList[0] = Tcmd; // update throttle
+          inputList[1] = Ycmd; // update yaw
+          inputList[2] = Pcmd; // update pitch
+          inputList[3] = Rcmd; // update roll
+          inputList[4] = killcmd; // update kill flag in inputList
           xSemaphoreGive(nRF24Mutex);
         }
 
-        if (mode == 1){ // roll only
-          pidRollRate.Kp = kp;
-          pidRollRate.Ki = ki;
-          pidRollRate.Kd = kd;
-        }
-        if (mode == 2){ // pitch only
-          pidPitchRate.Kp = kp;
-          pidPitchRate.Ki = ki;
-          pidPitchRate.Kd = kd;
-        }
-        if (mode == 3){ // yaw only
-          pidYawRate.Kp = kp;
-          pidYawRate.Ki = ki;
-          pidYawRate.Kd = kd;
-        }
+        // if (mode == 1){ // roll only
+        //   pidRollRate.Kp = kp;
+        //   pidRollRate.Ki = ki;
+        //   pidRollRate.Kd = kd;
+        // }
+        // if (mode == 2){ // pitch only
+        //   pidPitchRate.Kp = kp;
+        //   pidPitchRate.Ki = ki;
+        //   pidPitchRate.Kd = kd;
+        // }
+        // if (mode == 3){ // yaw only
+        //   pidYawRate.Kp = kp;
+        //   pidYawRate.Ki = ki;
+        //   pidYawRate.Kd = kd;
+        // }
       }
     }
 

@@ -14,29 +14,27 @@
 // Constants
 #define PI 3.1415f
 
-// outer loop (desired angular rate in rad/s): 90 deg/sec
-#define U_MAX_ROLL     PI / 2.0f
-#define U_MAX_PITCH    PI / 2.0f
-#define U_MAX_YAW      PI / 4.0f
+// outer loop (desired angular rate in rad/s): 180 deg/sec
+#define U_MAX_ROLL          PI 
+#define U_MAX_PITCH         PI 
 
-// inner loop: it is pwm ticks in us for authority 
-#define U_MAX_ROLL_RATE     500.0f
-#define U_MAX_PITCH_RATE    500.0f
-#define U_MAX_YAW_RATE      300.0f
+// inner loop: it is pwm ticks in us for authority (PID 40% authority) 
+#define U_MAX_ROLL_RATE     150.0f
+#define U_MAX_PITCH_RATE    150.0f
+#define U_MAX_YAW_RATE      100.0f
 
-// Adaptive PID config:
-#define GAMMA_B         3e-3f
+// Adaptive PID config: 
+#define GAMMA_B         0.01f
 #define SIGMA           0.01f
 #define B_SIGN          1.0f
 #define CONTROLLER_MODE 0.0f
 
-// Initial PID Gains:
-#define P   1.0f
-#define I   1.0f
+// Initial P-PID Gains:
+#define P   5.0f
 
 #define KP  1.0f
-#define KI  1.0f
-#define KD  1.0f
+#define KI  0.0f
+#define KD  0.0f
 
 // Global shared sensor data
 extern mpu6050Data_t mpuData;

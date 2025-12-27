@@ -67,4 +67,3 @@ bool main_rx_init(void){
     return true;
   }
 }
-

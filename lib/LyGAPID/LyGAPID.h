@@ -3,11 +3,17 @@
 
 #include <Arduino.h>
 
+#define KP_OUT_MAX 10.0f
+
+#define KP_MAX 10.0f
+#define KI_MAX 10.0f
+#define KD_MAX 10.0f
+
 
 typedef struct {
     float Kp, Ki, Kd;
 
-    float integral, prev_error, prev_derivative;
+    float integral, prev_error, prev_derivative, i_limit;
 
     float gamma_base;
     float sigma;
