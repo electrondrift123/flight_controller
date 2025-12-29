@@ -36,6 +36,12 @@
 #define KI  0.0f
 #define KD  0.0f
 
+// MAX commands in float:
+#define THROTTLE_MAX 1000.0f
+#define THROTTLE_MIN 0.0f
+#define YAW_MAX       3.1415f // 180 deg/s
+#define PITCH_ROLL_MAX     0.873f  // 50 deg
+
 // Global shared sensor data
 extern mpu6050Data_t mpuData;
 extern magData_t     magData;

@@ -82,7 +82,7 @@ void watchdogTask(void* parameters) {
       IWDG->KR = 0xAAAA;  // Refresh watchdog
     } else { 
       // Don’t refresh → MCU resets
-      if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+      if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(1)) == pdTRUE){
         Serial.println("Watchdog timed out");
         xSemaphoreGive(serialMutex);
       }
@@ -122,7 +122,7 @@ void readSensorsTask(void* Parameters) {
     dt = intervalTicks * portTICK_PERIOD_MS / 1000.0f; // dt in seconds
 
     // read the BMP280 sensor
-    if (xSemaphoreTake(wireMutex, portMAX_DELAY)){
+    if (xSemaphoreTake(wireMutex, pdMS_TO_TICKS(1)) == pdTRUE){
       // read MPU6050, BMP280, Magnetometer sensor: 
       if (sensorsReady()) {
         WDT_setSafe(true);
@@ -153,7 +153,7 @@ void readSensorsTask(void* Parameters) {
     }
 
     // update the Madgwick's data:
-    if (xSemaphoreTake(madgwickMutex, portMAX_DELAY)){
+    if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE){
       MadgwickSensorList[0] = ax; // Accel X
       MadgwickSensorList[1] = ay; // Accel Y
       MadgwickSensorList[2] = az; // Accel Z
@@ -176,7 +176,7 @@ void readSensorsTask(void* Parameters) {
 
 
     // Update shared data: BMP280 altitude
-    if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)){
+    if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE){
       telemetry[3] = altSmooth; // Update altitude in telemetry
       xSemaphoreGive(telemetryMutex);
     }
@@ -214,7 +214,7 @@ void MadgwickTask(void* Parameters) {
       prevTick = nowTick;
 
       // read the sensors data
-      if (xSemaphoreTake(madgwickMutex, portMAX_DELAY)) {
+      if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
         ax = MadgwickSensorList[0]; // Accel X
         ay = MadgwickSensorList[1]; // Accel Y
         az = MadgwickSensorList[2]; // Accel Z
@@ -235,7 +235,7 @@ void MadgwickTask(void* Parameters) {
 
       MadgwickGetEuler(&madData);
 
-      if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
+      if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
         // units: 
         eulerAngles[0] = madData.roll;
         eulerAngles[1] = madData.pitch;
@@ -282,12 +282,12 @@ void PIDtask(void* Parameters){
   static bool altitudeLockSet = false;
 
   // EMA filter variables & constants
-  static float throttleFiltered = 1000.0f;
+  static float throttleFiltered = 0.0f;
   static float rollInputFiltered = 0.0f;
   static float pitchInputFiltered = 0.0f;
   static float yawInputFiltered = 0.0f;
 
-  const float alpha = 0.2f;  // adjust as needed
+  const float alpha = 0.8f;  // adjust as needed
 
   // flags
   bool ALT_H = false; // Altitude Hold flag
@@ -325,7 +325,7 @@ void PIDtask(void* Parameters){
     print_counter++;
 
     // read sensors:
-    if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)){
+    if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE){
       // units: deg
       // convert: deg -> rad
       roll =  eulerAngles[0] * DEG_TO_RAD;
@@ -333,7 +333,7 @@ void PIDtask(void* Parameters){
       yaw =   eulerAngles[2] * DEG_TO_RAD;
       xSemaphoreGive(eulerAnglesMutex); // release the mutex
     }
-    if (xSemaphoreTake(madgwickMutex, portMAX_DELAY)){
+    if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE){
       // read Madgwick's data: units: rad
       // unit: rad/s
       rollRate =  MadgwickSensorList[3]; // Gyro X
@@ -341,27 +341,28 @@ void PIDtask(void* Parameters){
       yawRate =   MadgwickSensorList[5]; // Gyro Z
       xSemaphoreGive(madgwickMutex); // release the mutex
     }
-    if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)){
+    if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE){
       altitude = telemetry[3]; // Get altitude from telemetry
       xSemaphoreGive(telemetryMutex); // release the mutex
     }
 
     // read user input from nRF24L01 (use mutex):
-    if (xSemaphoreTake(nRF24Mutex, portMAX_DELAY)){
+    if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE){
       // read user input here
-      // throttle = inputList[0]; // Throttle
-      // yawInput = inputList[1]; // Yaw Rate input
-      // pitchInput = inputList[2]; // Pitch input
-      // rollInput = inputList[3]; // Roll input
-      throttle = 400.0f; // Throttle
-      rollInput = 0.0f; // Roll input
-      pitchInput = 0.0f; // Pitch input
-      yawInput = 0.0f; // Yaw input
+      throttle = inputList[0]; // Throttle
+      yawInput = inputList[1]; // Yaw Rate input
+      pitchInput = inputList[2]; // Pitch input
+      rollInput = inputList[3]; // Roll input
+
+      KILL_MOTORS = (inputList[4] != 0.0f);
+      // throttle = 400.0f; // Throttle
+      // rollInput = 0.0f; // Roll input
+      // pitchInput = 0.0f; // Pitch input
+      // yawInput = 0.0f; // Yaw input
 
       // RTL = (inputList[4] != 0.0f);
       Emergency_Landing = (inputList[5] != 0.0f);
       // KILL_MOTORS = (inputList[6] != 0.0f);
-      KILL_MOTORS = (inputList[4] != 0.0f);
       ALT_H = (inputList[7] != 0.0f); 
       xSemaphoreGive(nRF24Mutex); // release the mutex
     }
@@ -370,7 +371,6 @@ void PIDtask(void* Parameters){
     if (KILL_MOTORS) {
       resetLyGAPID(&pidRoll);
       resetLyGAPID(&pidPitch);
-      resetLyGAPID(&pidYaw);
 
       resetLyGAPID(&pidRollRate);
       resetLyGAPID(&pidPitchRate);
@@ -426,13 +426,17 @@ void PIDtask(void* Parameters){
     pitchInputFiltered = alpha * pitchInput + (1 - alpha) * pitchInputFiltered;
     yawInputFiltered   = alpha * yawInput   + (1 - alpha) * yawInputFiltered;
 
+    // clamp
+    rollInputFiltered = constrainFloat(rollInputFiltered, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+    pitchInputFiltered = constrainFloat(pitchInputFiltered, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+    yawInputFiltered = constrainFloat(yawInputFiltered, -YAW_MAX, YAW_MAX);
+
     // PID start:
-    // Outer loop (30ms):
-    // computing desired rates: (PI-controller):
+    // computing desired rates: (P-controller):
     if (outer_loop_counter >= 5){ // 50 Hz
+      // Already clamped by the LyGAPID function
       roll_rate_setpoint = computeLyGAPID_out(&pidRoll, rollInputFiltered, roll, 6.0f * dt); // deg/s
       pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, 6.0f * dt); // deg/s
-      // yaw_rate_setpoint = computeLyGAPID_out(&pidYaw, yawInputFiltered, yaw, 6.0f * dt); // deg/s
 
       outer_loop_counter = 0; // reset the counter
     }
@@ -446,10 +450,10 @@ void PIDtask(void* Parameters){
 
     float R_mix = constrainFloat(roll_rate_correction, -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
     float P_mix = constrainFloat(pitch_rate_correction, -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
-    float Y_mix = constrainFloat(yaw_rate_correction, -U_MAX_YAW_RATE, U_MAX_YAW_RATE) * 0.0f;
+    float Y_mix = constrainFloat(yaw_rate_correction, -U_MAX_YAW_RATE, U_MAX_YAW_RATE);
 
     // PID end.
-    throttleFiltered = constrainFloat(throttleFiltered, 0.0f, 700.0f);
+    throttleFiltered = constrainFloat(throttleFiltered, 0.0f, 1000.0f);
     // Motor Mixer Algorithm (Props-out), (not yet tested):
     motor_cmd[0] = cmd_bias + throttleFiltered + R_mix + P_mix + Y_mix; // Front Left
     motor_cmd[1] = cmd_bias + throttleFiltered - R_mix + P_mix - Y_mix; // Front Right
@@ -510,14 +514,14 @@ void PIDtask(void* Parameters){
       // Serial.print(motor3_output); Serial.print(", ");
       // Serial.println(motor4_output); 
 
-      // Roll mixer output:
-      Serial.print("Roll: "); Serial.print(roll * (180.0f / 3.1415f));
-      Serial.print(", R_mix: "); Serial.println(R_mix);
+      // // Roll mixer output:
+      // Serial.print("Roll: "); Serial.print(roll * (180.0f / 3.1415f));
+      // Serial.print(", R_mix: "); Serial.println(R_mix);
 
-      Serial.print("PI gains: "); Serial.println(pidRoll.Kp); 
+      // Serial.print("PI gains: "); Serial.println(pidRoll.Kp); 
 
-      Serial.print("PID gains: "); Serial.print(pidRollRate.Kp); Serial.print(", ");
-      Serial.print(pidRollRate.Ki); Serial.print(", "); Serial.println(pidRollRate.Kd); 
+      // Serial.print("PID gains: "); Serial.print(pidRollRate.Kp); Serial.print(", ");
+      // Serial.print(pidRollRate.Ki); Serial.print(", "); Serial.println(pidRollRate.Kd); 
 
 
       // xSemaphoreGive(serialMutex);
@@ -558,7 +562,9 @@ void MotorTest(void *Parameters){
 }
 
 void RXtask(void* Parameters){
-  int16_t local_telemetry[5] = {0, 0, 0, 0, 0};
+  // reply: roll, pitch, yaw, alt, rad status, 2{P, kp, ki, kd}, {Kp, Ki, Kd}
+  // 32 bytes nRF24 max can handle, sent:  32 bytes, int16 = 2 bytes
+  int16_t local_telemetry[16] = {0, 0, 0, 0, 0, 0,0,0,0, 0,0,0,0, 0,0,0}; 
   int mode = 0;
   // float kp, ki, kd, kill;
   float Tcmd, Ycmd, Pcmd, Rcmd, killcmd;
@@ -575,16 +581,31 @@ void RXtask(void* Parameters){
       while (radio.available()) {
         local_telemetry[4] = 1; // 1 = connected, 0 = disconnected
 
-        if (xSemaphoreTake(eulerAnglesMutex, portMAX_DELAY)) {
+        if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
           local_telemetry[0] = (int16_t) eulerAngles[0];
           local_telemetry[1] = (int16_t) eulerAngles[1];
           local_telemetry[2] = (int16_t) eulerAngles[2];
           xSemaphoreGive(eulerAnglesMutex);
         }
-        if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)) {
+        if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
           local_telemetry[3] = (int16_t) telemetry[3];
           xSemaphoreGive(telemetryMutex);
         }
+
+        // Extract PID gains
+        local_telemetry[5] = (int16_t)(pidRoll.Kp * 100);
+        local_telemetry[6] = (int16_t)(pidRollRate.Kp * 100);
+        local_telemetry[7] = (int16_t)(pidRollRate.Ki * 100);
+        local_telemetry[8] = (int16_t)(pidRollRate.Kd * 100);
+        
+        local_telemetry[9] = (int16_t)(pidPitch.Kp * 100);
+        local_telemetry[10] = (int16_t)(pidPitchRate.Kp * 100);
+        local_telemetry[11] = (int16_t)(pidPitchRate.Ki * 100);
+        local_telemetry[12] = (int16_t)(pidPitchRate.Kd * 100);
+
+        local_telemetry[13] = (int16_t)(pidYawRate.Kp * 100);
+        local_telemetry[14] = (int16_t)(pidYawRate.Ki * 100);
+        local_telemetry[15] = (int16_t)(pidYawRate.Kd * 100);
 
         // Write ACK payload BEFORE read
         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
@@ -615,7 +636,12 @@ void RXtask(void* Parameters){
         Rcmd = (float)rx_load[3] / 100.0f;
         killcmd = (float)rx_load[4];
 
-        //// TODO: Process the data: 
+        // clamp it to the safe range 
+        Tcmd = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX); // Throttle command
+        Ycmd = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX); // Yaw command (max: -180 to 180 deg/s)
+        Pcmd = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Pitch command (max: -50 to 50 deg)
+        Rcmd = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Roll command (max: -50 to 50 deg)
+        killcmd = constrainFloat(killcmd, 0.0f, 1.0f); // Kill command (0 or 1)
 
         // // clamp the PID gains
         // kp = constrainFloat(kp, 1.0f, 40.0f);
@@ -623,12 +649,7 @@ void RXtask(void* Parameters){
         // kd = constrainFloat(kd, 0.0f, 10.0f);
 
         // 2. update the pid params
-        if (xSemaphoreTake(nRF24Mutex, portMAX_DELAY)){
-          // mode = inputList[0];
-          // kp = inputList[1];
-          // ki = inputList[2];
-          // kd = inputList[3];
-          
+        if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {   
           inputList[0] = Tcmd; // update throttle
           inputList[1] = Ycmd; // update yaw
           inputList[2] = Pcmd; // update pitch
@@ -637,21 +658,6 @@ void RXtask(void* Parameters){
           xSemaphoreGive(nRF24Mutex);
         }
 
-        // if (mode == 1){ // roll only
-        //   pidRollRate.Kp = kp;
-        //   pidRollRate.Ki = ki;
-        //   pidRollRate.Kd = kd;
-        // }
-        // if (mode == 2){ // pitch only
-        //   pidPitchRate.Kp = kp;
-        //   pidPitchRate.Ki = ki;
-        //   pidPitchRate.Kd = kd;
-        // }
-        // if (mode == 3){ // yaw only
-        //   pidYawRate.Kp = kp;
-        //   pidYawRate.Ki = ki;
-        //   pidYawRate.Kd = kd;
-        // }
       }
     }
 
