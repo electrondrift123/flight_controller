@@ -5,9 +5,14 @@
 
 #define KP_OUT_MAX 10.0f
 
-#define KP_MAX 10.0f
-#define KI_MAX 10.0f
-#define KD_MAX 10.0f
+#define KP_MAX 45.0f
+#define KP_MIN 30.0f
+
+#define KI_MAX 30.0f
+#define KI_MIN 10.0f
+
+#define KD_MAX 0.01f
+#define KD_MIN 0.0f
 
 
 typedef struct {
@@ -34,6 +39,8 @@ void initLyGAPID(LyGAPIDControllerData_t* lygapid, float kp, float ki, float kd,
 float computeLyGAPID_out(LyGAPIDControllerData_t* lygapid, float setpoint, float actual, float dt);
 
 float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float actual, float dt);
+
+float computeLyGAPID_yaw(LyGAPIDControllerData_t* lygapid, float setpoint, float actual, float dt);
 
 void resetLyGAPID(LyGAPIDControllerData_t* lygapid);
 

@@ -16,7 +16,14 @@
 #include "LyGAPID.h"
 #include "WDT.h"
 
+void enableFPU() {
+  SCB->CPACR |= ((3UL << 10*2) | (3UL << 11*2));  // Enable CP10 and CP11 (full access to FPU)
+  __DSB();
+  __ISB();
+}
+
 void setup() {
+  enableFPU(); // Enable FPU before any floating-point operations
   Serial.begin(115200);
   // while (!Serial);
   delay(250);

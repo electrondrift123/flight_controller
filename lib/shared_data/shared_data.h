@@ -32,15 +32,15 @@
 // Initial P-PID Gains:
 #define P   5.0f
 
-#define KP  1.0f
-#define KI  0.0f
+#define KP  35.0f
+#define KI  10.0f
 #define KD  0.0f
 
 // MAX commands in float:
 #define THROTTLE_MAX 1000.0f
 #define THROTTLE_MIN 0.0f
-#define YAW_MAX       3.1415f // 180 deg/s
-#define PITCH_ROLL_MAX     0.873f  // 50 deg
+#define YAW_MAX             PI * 2.0f   // 360 deg/s max cmd
+#define PITCH_ROLL_MAX      PI / 6.0f   // 30 deg max cmd
 
 // Global shared sensor data
 extern mpu6050Data_t mpuData;
@@ -72,7 +72,7 @@ extern LyGAPIDControllerData_t pidYawRate;
 // Euler angles output from filter
 extern volatile float eulerAngles[3];
 
-extern volatile float inputList[8]; // [T, R, P, Y, RTL, EL, Kill, ALT_H]
+extern volatile float inputList[8]; // [T, Y, P, R, KILL, E-land, _, _] // to receive
 extern volatile float telemetry[6]; //[Lat, lon, alt, heading, distance, batt]
 // temporary telemtry: [roll, pitch, yaw or heading, alt, radio_state] 
 
