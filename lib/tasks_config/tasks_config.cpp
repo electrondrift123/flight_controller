@@ -20,6 +20,13 @@
 #include "LyGAPID.h"
 #include "WDT.h"
 
+// DEFINE PRIORITY LEVELS (status: working)
+#define PRIORITY_PID_FUSION   1 // 500 Hz -> try prio: 2
+#define PRIORITY_WDT          1 // 1 Hz
+#define PRIORITY_SENSOR_READ  1 // 1 kHz
+#define PRIORITY_RADIO        1 // Interrupt driven
+#define PRIORITY_BLINK        1 // 1 Hz
+
 // Complementary filter for altitude estimation
 float complementaryAltitude(float baroAlt,
                              float accN, float accE, float accD, // already NED
@@ -69,6 +76,7 @@ bool sensorsReady(){
   return BMP280_read(&bmpData) && MPU6050_read(&mpuData) && QMC5883P_read(&magData);
 }
 
+/////// TASKS /////// 
 void watchdogTask(void* parameters) {
   vTaskDelay(pdMS_TO_TICKS(1000));
   IWDG_Init(); // watchdogtimer initialization for failsafes
@@ -197,143 +205,76 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
 }
 
 // Madgwick filter task (sensor fusion) 1 kHz
-void MadgwickTask(void* Parameters) {
-  const TickType_t intervalTicks = pdMS_TO_TICKS(4);  // 4ms max
-  TickType_t prevTick = xTaskGetTickCount();
-  TickType_t lastWakeTime = xTaskGetTickCount();
-
-  // local varibles for sensors data
-  float ax, ay, az, wx, wy, wz, mx, my, mz;
-
-  for (;;) {
-    TickType_t nowTick = xTaskGetTickCount();
-    TickType_t deltaTick = nowTick - prevTick;
-
-    if (deltaTick >= intervalTicks) {
-      float dt = deltaTick * portTICK_PERIOD_MS / 1000.0f;  // dt in seconds
-      prevTick = nowTick;
-
-      // read the sensors data
-      if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-        ax = MadgwickSensorList[0]; // Accel X
-        ay = MadgwickSensorList[1]; // Accel Y
-        az = MadgwickSensorList[2]; // Accel Z
-        wx = MadgwickSensorList[3]; // Gyro X
-        wy = MadgwickSensorList[4]; // Gyro Y
-        wz = MadgwickSensorList[5]; // Gyro Z
-        mx = MadgwickSensorList[6]; // Mag X
-        my = MadgwickSensorList[7]; // Mag Y
-        mz = MadgwickSensorList[8]; // Mag Z
-        xSemaphoreGive(madgwickMutex);
-      }
-
-      MadgwickFilterUpdate(&madData,
-        wx, wy, wz,
-        ax, ay, az,
-        mx, my, mz,
-        dt);
-
-      MadgwickGetEuler(&madData);
-
-      if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-        // units: 
-        eulerAngles[0] = madData.roll;
-        eulerAngles[1] = madData.pitch;
-        eulerAngles[2] = madData.yaw;
-        xSemaphoreGive(eulerAnglesMutex);
-      }
-
-      //// Print debug
-      // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-      //   Serial.print("Euler: ");
-      //   Serial.print(madData.roll); Serial.print(", ");
-      //   Serial.print(madData.pitch); Serial.print(", ");
-      //   Serial.println(madData.yaw);
-
-      //   // It prints what I expected (It works fine except for magData):
-      //   // Acc
-      //   // Serial.print("Accel: "); Serial.print(mpuData.ax); Serial.print(", ");
-      //   // Serial.print(ay); Serial.print(", "); Serial.println(az);
-      //   // Gyro
-      //   // Serial.print("Gyro: "); Serial.print(mpuData.wx); Serial.print(", ");
-      //   // Serial.print(wy); Serial.print(", "); Serial.println(wz);
-      //   // Mag
-      //   // Serial.print("Mag: "); Serial.print(magData.mx); Serial.print(", ");
-      //   // Serial.print(my); Serial.print(", "); Serial.println(mz);
-      //   xSemaphoreGive(serialMutex);
-      // }
-    }
-    vTaskDelayUntil(&lastWakeTime, intervalTicks);
-  }
-}
-
 // void MadgwickTask(void* Parameters) {
 //   const TickType_t intervalTicks = pdMS_TO_TICKS(4);  // 4ms max
+//   TickType_t prevTick = xTaskGetTickCount();
 //   TickType_t lastWakeTime = xTaskGetTickCount();
-
 
 //   // local varibles for sensors data
 //   float ax, ay, az, wx, wy, wz, mx, my, mz;
 
-//   float dt = 0.002f; // initial dt
-
 //   for (;;) {
-//     // read the sensors data
-//     if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//       ax = MadgwickSensorList[0]; // Accel X
-//       ay = MadgwickSensorList[1]; // Accel Y
-//       az = MadgwickSensorList[2]; // Accel Z
-//       wx = MadgwickSensorList[3]; // Gyro X
-//       wy = MadgwickSensorList[4]; // Gyro Y
-//       wz = MadgwickSensorList[5]; // Gyro Z
-//       mx = MadgwickSensorList[6]; // Mag X
-//       my = MadgwickSensorList[7]; // Mag Y
-//       mz = MadgwickSensorList[8]; // Mag Z
-//       xSemaphoreGive(madgwickMutex);
+//     TickType_t nowTick = xTaskGetTickCount();
+//     TickType_t deltaTick = nowTick - prevTick;
+
+//     if (deltaTick >= intervalTicks) {
+//       float dt = deltaTick * portTICK_PERIOD_MS / 1000.0f;  // dt in seconds
+//       prevTick = nowTick;
+
+//       // read the sensors data
+//       if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//         ax = MadgwickSensorList[0]; // Accel X
+//         ay = MadgwickSensorList[1]; // Accel Y
+//         az = MadgwickSensorList[2]; // Accel Z
+//         wx = MadgwickSensorList[3]; // Gyro X
+//         wy = MadgwickSensorList[4]; // Gyro Y
+//         wz = MadgwickSensorList[5]; // Gyro Z
+//         mx = MadgwickSensorList[6]; // Mag X
+//         my = MadgwickSensorList[7]; // Mag Y
+//         mz = MadgwickSensorList[8]; // Mag Z
+//         xSemaphoreGive(madgwickMutex);
+//       }
+
+//       MadgwickFilterUpdate(&madData,
+//         wx, wy, wz,
+//         ax, ay, az,
+//         mx, my, mz,
+//         dt);
+
+//       MadgwickGetEuler(&madData);
+
+//       if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//         // units: 
+//         eulerAngles[0] = madData.roll;
+//         eulerAngles[1] = madData.pitch;
+//         eulerAngles[2] = madData.yaw;
+//         xSemaphoreGive(eulerAnglesMutex);
+//       }
+
+//       //// Print debug
+//       // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
+//       //   Serial.print("Euler: ");
+//       //   Serial.print(madData.roll); Serial.print(", ");
+//       //   Serial.print(madData.pitch); Serial.print(", ");
+//       //   Serial.println(madData.yaw);
+
+//       //   // It prints what I expected (It works fine except for magData):
+//       //   // Acc
+//       //   // Serial.print("Accel: "); Serial.print(mpuData.ax); Serial.print(", ");
+//       //   // Serial.print(ay); Serial.print(", "); Serial.println(az);
+//       //   // Gyro
+//       //   // Serial.print("Gyro: "); Serial.print(mpuData.wx); Serial.print(", ");
+//       //   // Serial.print(wy); Serial.print(", "); Serial.println(wz);
+//       //   // Mag
+//       //   // Serial.print("Mag: "); Serial.print(magData.mx); Serial.print(", ");
+//       //   // Serial.print(my); Serial.print(", "); Serial.println(mz);
+//       //   xSemaphoreGive(serialMutex);
+//       // }
 //     }
-
-//     MadgwickFilterUpdate(&madData,
-//       wx, wy, wz,
-//       ax, ay, az,
-//       mx, my, mz,
-//       dt);
-
-//     MadgwickGetEuler(&madData);
-
-//     if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//       // units: 
-//       eulerAngles[0] = madData.roll;
-//       eulerAngles[1] = madData.pitch;
-//       eulerAngles[2] = madData.yaw;
-//       xSemaphoreGive(eulerAnglesMutex);
-//     }
-
-//     //// Print debug
-//     // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-//     //   Serial.print("Euler: ");
-//     //   Serial.print(madData.roll); Serial.print(", ");
-//     //   Serial.print(madData.pitch); Serial.print(", ");
-//     //   Serial.println(madData.yaw);
-
-//     //   // It prints what I expected (It works fine except for magData):
-//     //   // Acc
-//     //   // Serial.print("Accel: "); Serial.print(mpuData.ax); Serial.print(", ");
-//     //   // Serial.print(ay); Serial.print(", "); Serial.println(az);
-//     //   // Gyro
-//     //   // Serial.print("Gyro: "); Serial.print(mpuData.wx); Serial.print(", ");
-//     //   // Serial.print(wy); Serial.print(", "); Serial.println(wz);
-//     //   // Mag
-//     //   // Serial.print("Mag: "); Serial.print(magData.mx); Serial.print(", ");
-//     //   // Serial.print(my); Serial.print(", "); Serial.println(mz);
-//     //   xSemaphoreGive(serialMutex);
-//     // }
-  
 //     vTaskDelayUntil(&lastWakeTime, intervalTicks);
 //   }
 // }
 
-
-// Angle Mode - 500 Hz
 void PIDtask(void* Parameters){
   TickType_t lastWakeTime = xTaskGetTickCount();
   TickType_t previousTime = lastWakeTime; // Initialize previous time
@@ -370,6 +311,8 @@ void PIDtask(void* Parameters){
   float pitch_rate_setpoint = 0.00f;
   float yaw_rate_setpoint = 0.00f;
 
+  float ax, ay, az, wx, wy, wz, mx, my, mz;
+
   float motor_cmd[4] = {1000.0f, 1000.0f, 1000.0f, 1000.0f};
   float cmd_bias = 1000.0f;
 
@@ -390,23 +333,49 @@ void PIDtask(void* Parameters){
     outer_loop_counter++;
     print_counter++;
 
+    ////////////// FUSION: MADGWICK ////////////
+    // read the sensors data
+    if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+      ax = MadgwickSensorList[0]; // Accel X
+      ay = MadgwickSensorList[1]; // Accel Y
+      az = MadgwickSensorList[2]; // Accel Z
+      wx = MadgwickSensorList[3]; // Gyro X
+      wy = MadgwickSensorList[4]; // Gyro Y
+      wz = MadgwickSensorList[5]; // Gyro Z
+      mx = MadgwickSensorList[6]; // Mag X
+      my = MadgwickSensorList[7]; // Mag Y
+      mz = MadgwickSensorList[8]; // Mag Z
+      xSemaphoreGive(madgwickMutex);
+    }
+
+    MadgwickFilterUpdate(&madData,
+      wx, wy, wz,
+      ax, ay, az,
+      mx, my, mz,
+      dt);
+
+    MadgwickGetEuler(&madData);
+
+    if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+      // units: 
+      eulerAngles[0] = madData.roll;
+      eulerAngles[1] = madData.pitch;
+      eulerAngles[2] = madData.yaw;
+      xSemaphoreGive(eulerAnglesMutex);
+    }
+    //////////////////////////////////////////////
+
     // read sensors:
-    if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE){
-      // units: deg
-      // convert: deg -> rad
-      roll =  eulerAngles[0] * DEG_TO_RAD;
-      pitch = eulerAngles[1] * DEG_TO_RAD;
-      yaw =   eulerAngles[2] * DEG_TO_RAD;
-      xSemaphoreGive(eulerAnglesMutex); // release the mutex
-    }
-    if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE){
-      // read Madgwick's data: units: rad
-      // unit: rad/s
-      rollRate =  MadgwickSensorList[3]; // Gyro X
-      pitchRate = MadgwickSensorList[4]; // Gyro Y
-      yawRate =   MadgwickSensorList[5]; // Gyro Z
-      xSemaphoreGive(madgwickMutex); // release the mutex
-    }
+    roll =  eulerAngles[0] * DEG_TO_RAD;
+    pitch = eulerAngles[1] * DEG_TO_RAD;
+    yaw =   eulerAngles[2] * DEG_TO_RAD;
+
+    // read Madgwick's data: units: rad
+    // unit: rad/s
+    rollRate =  wx; // Gyro X
+    pitchRate = wy; // Gyro Y
+    yawRate =   wz; // Gyro Z
+
     if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE){
       altitude = telemetry[3]; // Get altitude from telemetry
       xSemaphoreGive(telemetryMutex); // release the mutex
@@ -582,11 +551,14 @@ void PIDtask(void* Parameters){
       // Serial.print("Roll: "); Serial.print(roll * (180.0f / 3.1415f));
       // Serial.print(", R_mix: "); Serial.println(R_mix);
 
+      // Serial.print(roll * (180.0f / 3.1415f)); Serial.print(", ");
+      // Serial.print(pitch * (180.0f / 3.1415f)); Serial.print(", ");
+      // Serial.println(yaw * (180.0f / 3.1415f)); 
+
       // Serial.print("PI gains: "); Serial.println(pidRoll.Kp); 
 
       // Serial.print("PID gains: "); Serial.print(pidRollRate.Kp); Serial.print(", ");
       // Serial.print(pidRollRate.Ki); Serial.print(", "); Serial.println(pidRollRate.Kd); 
-
 
       // xSemaphoreGive(serialMutex);
       // }
@@ -833,7 +805,7 @@ void freeRTOS_tasks_init(void){
     "Watchdog Task",
     64,
     NULL,
-    1,
+    PRIORITY_WDT,
     NULL
   );
   if (result != pdPASS) {
@@ -846,7 +818,7 @@ void freeRTOS_tasks_init(void){
     "blinkTask",         // Name of the task
     64,                // Stack size in words
     NULL,                // Task input parameter
-    1,                   // Priority
+    PRIORITY_BLINK,                   // Priority
     NULL                 // Task handle
   );
   if (result != pdPASS) {
@@ -860,7 +832,7 @@ void freeRTOS_tasks_init(void){
     "read Sensors Task",
     128, // Stack size in words
     NULL,
-    1,
+    PRIORITY_SENSOR_READ,
     NULL
   );
   if (result != pdPASS) {
@@ -869,27 +841,12 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
-  // sensors data reading task
-  result = xTaskCreate(
-    MadgwickTask,
-    "MadgwickTask", // Task name
-    256,               // Stack size in words
-    NULL,
-    1,                 // Task priority
-    NULL               // Task handle
-  );
-  if (result != pdPASS) {
-    // Handle task creation failure
-    Serial.println("Failed to create MadgwickTask");
-    while (1); // Infinite loop to indicate failure
-  }
-
   result = xTaskCreate(
     PIDtask,
-    "PID task",
+    "PID and Fusion task",
     256,
     NULL,
-    1,
+    PRIORITY_PID_FUSION,
     NULL
   );
   if (result != pdPASS) {
@@ -903,7 +860,7 @@ void freeRTOS_tasks_init(void){
     "nRF24 RX task",
     256,
     NULL,
-    1,
+    PRIORITY_RADIO,
     &radioTaskHandle
   );
   if (result != pdPASS) {
@@ -929,4 +886,11 @@ void freeRTOS_tasks_init(void){
 
 
 
-// Priority tasks are all set to 1 
+// Priority tasks are all set to 1 (working) - i will try to change for the better: status: trying...
+
+//// TODO: 
+// - PID, Fusion, Sensor read = 500 Hz, 500 Hz, 1 kHz (done)
+// - PID highest priority without sacrificing stability of other tasks (...)
+// - Cut the motor when the signal is lost for more than 0.5 second
+// - fix the integral windup issue (...)
+// - PID gains ranges

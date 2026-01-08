@@ -20,7 +20,7 @@ void initLyGAPID(LyGAPIDControllerData_t* lygapid, float Kp, float Ki, float Kd,
     lygapid->prev_error = 0.0f;
     lygapid->prev_derivative = 0.0f;
 
-    lygapid->i_limit = lygapid->output_limit * 0.20f; // 40% of output limit
+    lygapid->i_limit = lygapid->output_limit * 0.40f; // 40% of output limit
 }
 
 float computeLyGAPID_out(LyGAPIDControllerData_t* lygapid, float setpoint, float actual, float dt){
@@ -66,7 +66,10 @@ float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float 
     bool reducing_error = (error * u_ < 0);
 
     // integral update (Anti-windup)
-    if (!saturated || reducing_error){
+    // if (!saturated || reducing_error){
+    //     lygapid->integral += error * dt;
+    // }
+    if (!saturated){
         lygapid->integral += error * dt;
     }
 
@@ -127,7 +130,10 @@ float computeLyGAPID_yaw(LyGAPIDControllerData_t* lygapid, float setpoint, float
     bool reducing_error = (error * u_ < 0);
 
     // integral update (Anti-windup)
-    if (!saturated || reducing_error){
+    // if (!saturated || reducing_error){
+    //     lygapid->integral += error * dt;
+    // }
+    if (!saturated){
         lygapid->integral += error * dt;
     }
 

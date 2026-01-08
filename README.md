@@ -37,8 +37,8 @@ A real-time, flight controller for STM32F4-based drones, built using FreeRTOS an
 Human input from the controller is Angle in Degrees. Then the flight code will convert it into radians for computations.
 
 Adaptive P-PID per axis: 
-P outer loop: angle error (50 Hz)
-PID inner loop: angular rates error (250Hz)
+P outer loop: angle error (100 Hz)
+PID inner loop: angular rates error (500Hz)
 1:5 ratio
 
 
@@ -80,3 +80,10 @@ PID inner loop: angular rates error (250Hz)
 
 # Controller Block Diagram (one block, not cascaded or the full architecture):
 ![alt text](image.png)
+
+
+# Timing
+- read sensor:    1 kHz
+- PID & Madgwick: 500 Hz
+- Radio:          interrupt driven
+- WDT:            1 Hz
