@@ -480,7 +480,7 @@ void PIDtask(void* Parameters){
 
       // ===== IS LANDED LOGIC (disable I-term) =====
       float avg_motor_output = (motor_cmd[0] + motor_cmd[1] + motor_cmd[2] + motor_cmd[3]) / 4.0f;
-      bool landed = (throttleFiltered < 1200.0f) && (avg_motor_output < 1200.0f); 
+      bool landed = (throttleFiltered < 200.0f) && (avg_motor_output < 1250.0f); 
 
       float pid_landed_flag;
 
