@@ -20,8 +20,10 @@
 #include "LyGAPID.h"
 #include "WDT.h"
 
+#include "Butterworth2ndLPF.h"
+
 // DEFINE PRIORITY LEVELS (status: working)
-#define PRIORITY_PID_FUSION   1 // 500 Hz -> try prio: 2
+#define PRIORITY_PID_FUSION   2 // 500 Hz -> try prio: 2
 #define PRIORITY_WDT          1 // 1 Hz
 #define PRIORITY_SENSOR_READ  1 // 1 kHz
 #define PRIORITY_RADIO        1 // Interrupt driven
@@ -142,9 +144,21 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
         wx = mpuData.wx;
         wy = mpuData.wy;
         wz = mpuData.wz;
+        // Raw data from BMP280
         mx = magData.mx;
         my = magData.my;
         mz = magData.mz;
+
+        Butterworth2ndLPF_Update(&accelLPF, ax, ay, az); // Apply LPF: Fc = 50 Hz
+        Butterworth2ndLPF_Update(&gyroLPF, wx, wy, wz); // Apply LPF: Fc = 30 Hz
+
+        // LPF outputs
+        ax = accelLPF.output_x; // LPF output for Accel X
+        ay = accelLPF.output_y; // LPF output for Accel Y
+        az = accelLPF.output_z; // LPF output for Accel Z
+        wx = gyroLPF.output_x;  // LPF output for Gyro X
+        wy = gyroLPF.output_y;  // LPF output for Gyro Y
+        wz = gyroLPF.output_z;  // LPF output for Gyro Z
 
         local_altitude = bmpData.altitude; // Store altitude locally
       }else {
@@ -277,8 +291,11 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
 
 void PIDtask(void* Parameters){
   TickType_t lastWakeTime = xTaskGetTickCount();
-  TickType_t previousTime = lastWakeTime; // Initialize previous time
   TickType_t interval = pdMS_TO_TICKS(2); // 500 Hz
+  int PID_RATIO = 5; // 500 Hz / 100 Hz = 5
+  float dt = 0.002f;
+  float dt_out = (float)(PID_RATIO) * dt;
+
 
   float altitude;
   float roll, pitch, yaw; // local variables for Euler Angles
@@ -311,8 +328,10 @@ void PIDtask(void* Parameters){
   float pitch_rate_setpoint = 0.00f;
   float yaw_rate_setpoint = 0.00f;
 
+  // FUSION Variables:
   float ax, ay, az, wx, wy, wz, mx, my, mz;
 
+  // motors init state:
   float motor_cmd[4] = {1000.0f, 1000.0f, 1000.0f, 1000.0f};
   float cmd_bias = 1000.0f;
 
@@ -325,11 +344,6 @@ void PIDtask(void* Parameters){
   vTaskDelay(pdMS_TO_TICKS(3000)); // delay for arming motor
 
   for (;;){
-    TickType_t currentTime = xTaskGetTickCount();
-    float dt = (currentTime - previousTime) * portTICK_PERIOD_MS / 1000.0f;
-    if (dt <= 0.0f || dt > 0.01f) dt = 0.002f; // clamp dt to a safe range
-    previousTime = currentTime;
-
     outer_loop_counter++;
     print_counter++;
 
@@ -413,17 +427,6 @@ void PIDtask(void* Parameters){
       TIM2->CCR4 = 1000;
     }
 
-    // // ====== RETURN TO LAUNCH ======
-    // if (RTL){
-    //   rollInput = 0.0f;
-    //   pitchInput = 0.0f;
-
-    //   float homeYaw = 0.0f; // Replace with actual value when GPS is added
-    //   yawInput = homeYaw;
-
-    //   //// TODO: implement RTL logic
-    // }
-
     // ====== EMERGENCY LANDING ======
     if (Emergency_Landing) {
       rollInput = 0.0f;
@@ -464,10 +467,10 @@ void PIDtask(void* Parameters){
 
     // PID start:
     // computing desired rates: (P-controller):
-    if (outer_loop_counter >= 5){ // 100 Hz
+    if (outer_loop_counter >= PID_RATIO){ // 100 Hz
       // Already clamped by the LyGAPID function
-      roll_rate_setpoint = computeLyGAPID_out(&pidRoll, rollInputFiltered, roll, 6.0f * dt); // deg/s
-      pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, 6.0f * dt); // deg/s
+      roll_rate_setpoint = computeLyGAPID_out(&pidRoll, rollInputFiltered, roll, dt_out); // deg/s
+      pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, dt_out); // deg/s
 
       outer_loop_counter = 0; // reset the counter
     }

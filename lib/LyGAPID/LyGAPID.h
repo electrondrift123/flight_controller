@@ -3,15 +3,16 @@
 
 #include <Arduino.h>
 
-#define KP_OUT_MAX 10.0f
+#define KP_OUT_MAX 6.0f
+#define KP_OUT_MIN 2.0f
 
 #define KP_MAX 45.0f
 #define KP_MIN 30.0f
 
-#define KI_MAX 30.0f
-#define KI_MIN 10.0f
+#define KI_MAX 35.0f
+#define KI_MIN 8.0f
 
-#define KD_MAX 0.01f
+#define KD_MAX 0.003f
 #define KD_MIN 0.0f
 
 

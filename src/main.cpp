@@ -15,6 +15,7 @@
 #include "main_rx.h" // Include main_rx for nRF24 radio handling
 #include "LyGAPID.h"
 #include "WDT.h"
+#include "Butterworth2ndLPF.h"
 
 void enableFPU() {
   SCB->CPACR |= ((3UL << 10*2) | (3UL << 11*2));  // Enable CP10 and CP11 (full access to FPU)
@@ -64,9 +65,13 @@ void setup() {
   // inner loop: PID for rates (unit: rad/sec)
   initLyGAPID(&pidRollRate,  KP, KI, KD, B_SIGN, GAMMA_B, SIGMA, U_MAX_ROLL_RATE, CONTROLLER_MODE);
   initLyGAPID(&pidPitchRate, KP, KI, KD, B_SIGN, GAMMA_B, SIGMA, U_MAX_PITCH_RATE, CONTROLLER_MODE);
-  initLyGAPID(&pidYawRate,   KP, KI, KD, B_SIGN, GAMMA_B, SIGMA, U_MAX_YAW_RATE, CONTROLLER_MODE); // zero for testing in a rod
+  initLyGAPID(&pidYawRate,   KP, KI, KD, B_SIGN, GAMMA_B, SIGMA, U_MAX_YAW_RATE, CONTROLLER_MODE); 
 
-  // interrupts();
+  // Butterworth 2nd order LPF initialization
+  Butterworth2ndLPF_Init(&accelLPF, 50.0f, 1000.0f); // Cutoff frequency: 50 Hz, Sample rate: 1000 Hz
+  Butterworth2ndLPF_Init(&gyroLPF, 30.0f, 1000.0f); // Cutoff frequency: 30 Hz, Sample rate: 1000 Hz
+
+  // interrupts()
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
   Serial.println("FreeRTOS tasks initialized!");
 

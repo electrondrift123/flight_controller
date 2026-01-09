@@ -10,6 +10,7 @@
 #include "Madgwick.h"
 #include "PID.h"
 #include "LyGAPID.h"
+#include "Butterworth2ndLPF.h"
 
 // Constants
 #define PI 3.1415f
@@ -30,7 +31,7 @@
 #define CONTROLLER_MODE 0.0f
 
 // Initial P-PID Gains:
-#define P   5.0f
+#define P   3.0f
 
 #define KP  35.0f
 #define KI  10.0f
@@ -68,6 +69,10 @@ extern LyGAPIDControllerData_t pidPitchRate;
 extern LyGAPIDControllerData_t pidYawRate;
 
 // PID params
+
+// Butterworth 2nd order LPF
+extern Butterworth2ndLPF_t accelLPF; // Accelerometer LPF
+extern Butterworth2ndLPF_t gyroLPF;  // Gyroscope LPF
 
 // Euler angles output from filter
 extern volatile float eulerAngles[3];

@@ -15,6 +15,9 @@ LyGAPIDControllerData_t pidRollRate;
 LyGAPIDControllerData_t pidPitchRate;
 LyGAPIDControllerData_t pidYawRate;
 
+Butterworth2ndLPF_t accelLPF; // Accelerometer LPF
+Butterworth2ndLPF_t gyroLPF;  // Gyroscope LPF
+
 volatile float eulerAngles[3] = {0.0f, 0.0f, 0.0f};
 
 volatile float inputList[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};

@@ -47,7 +47,7 @@ float computeLyGAPID_out(LyGAPIDControllerData_t* lygapid, float setpoint, float
         lygapid->Kp += dKp * dt;
 
         if (lygapid->Kp > KP_OUT_MAX) lygapid->Kp = KP_OUT_MAX; // clamp
-        else if (lygapid->Kp < 1.0f) lygapid->Kp = 1.0f;
+        else if (lygapid->Kp < KP_OUT_MIN) lygapid->Kp = KP_OUT_MIN;
     }
 
     return u;
