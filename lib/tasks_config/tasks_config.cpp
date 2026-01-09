@@ -23,7 +23,7 @@
 #include "Butterworth2ndLPF.h"
 
 // DEFINE PRIORITY LEVELS (status: working)
-#define PRIORITY_PID_FUSION   2 // 500 Hz -> try prio: 2
+#define PRIORITY_PID_FUSION   1 // 500 Hz -> try prio: 2 (radio task starve)
 #define PRIORITY_WDT          1 // 1 Hz
 #define PRIORITY_SENSOR_READ  1 // 1 kHz
 #define PRIORITY_RADIO        1 // Interrupt driven
@@ -331,6 +331,12 @@ void PIDtask(void* Parameters){
   // FUSION Variables:
   float ax, ay, az, wx, wy, wz, mx, my, mz;
 
+  // landed flag or take off
+  // Static timer and delay constant
+  static uint16_t takeoff_counter = 0;
+  static const uint16_t TAKEOFF_DELAY_COUNTS = 100;  // 0.5s at 100Hz (adjust as needed: 75 = 0.75s, 100 = 1s)
+
+
   // motors init state:
   float motor_cmd[4] = {1000.0f, 1000.0f, 1000.0f, 1000.0f};
   float cmd_bias = 1000.0f;
@@ -472,6 +478,31 @@ void PIDtask(void* Parameters){
       roll_rate_setpoint = computeLyGAPID_out(&pidRoll, rollInputFiltered, roll, dt_out); // deg/s
       pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, dt_out); // deg/s
 
+      // ===== IS LANDED LOGIC (disable I-term) =====
+      float avg_motor_output = (motor_cmd[0] + motor_cmd[1] + motor_cmd[2] + motor_cmd[3]) / 4.0f;
+      bool landed = (throttleFiltered < 1200.0f) && (avg_motor_output < 1200.0f); 
+
+      float pid_landed_flag;
+
+      if (landed) {
+          // Definitely on ground — immediate reset
+          takeoff_counter = 0;
+          pid_landed_flag = 1.0f;  // blocks integration + triggers reset in PID
+      } else {
+          // In flight
+          if (takeoff_counter < TAKEOFF_DELAY_COUNTS) {
+            takeoff_counter++;
+            pid_landed_flag = 1.0f;  // still block integration during grace period
+          } else {
+            pid_landed_flag = 0.0f;  // now allow full integration
+          }
+        }
+
+      // Apply the SAME flag to all rate PID structs
+      pidRollRate.landed  = pid_landed_flag;
+      pidPitchRate.landed = pid_landed_flag;
+      pidYawRate.landed   = pid_landed_flag;  
+
       outer_loop_counter = 0; // reset the counter
     }
 
@@ -552,7 +583,8 @@ void PIDtask(void* Parameters){
 
       // Roll mixer output:
       // Serial.print("Roll: "); Serial.print(roll * (180.0f / 3.1415f));
-      // Serial.print(", R_mix: "); Serial.println(R_mix);
+      // Serial.print(", R_mix: "); Serial.print(R_mix); Serial.print("Y: ");
+      // Serial.println(yawRate);
 
       // Serial.print(roll * (180.0f / 3.1415f)); Serial.print(", ");
       // Serial.print(pitch * (180.0f / 3.1415f)); Serial.print(", ");

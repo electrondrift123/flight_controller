@@ -30,6 +30,7 @@ typedef struct {
     float sp;
 
     float mode; // 0 = adaptive, 1 = static
+    float landed; // 1 = true
 
 } LyGAPIDControllerData_t;
 
