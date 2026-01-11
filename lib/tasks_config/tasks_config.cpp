@@ -426,11 +426,18 @@ void PIDtask(void* Parameters){
       resetLyGAPID(&pidPitchRate);
       resetLyGAPID(&pidYawRate);
 
-      // set motors to 1ms
+      throttle = 0.0f;
+      rollInput = 0.0f;
+      pitchInput = 0.0f;
+      yawInput = 0.0f;
+
+      // set motors to 1ms (disable this in real flight)
       TIM2->CCR1 = 1000;
       TIM2->CCR2 = 1000;
       TIM2->CCR3 = 1000;
       TIM2->CCR4 = 1000;
+
+      // Emergency_Landing = true; // reset the flag
     }
 
     // ====== EMERGENCY LANDING ======
@@ -440,8 +447,7 @@ void PIDtask(void* Parameters){
       yawInput = 0.0f;
       
       //// TODO: implement emergency landing logic 
-      // Take the current throttle and slowly decrease it while considering altitude
-      // throttle = 500.0f; // Set a safe throttle for landing
+      throttle -= 0.05f; // Decrease throttle gradually (-25 ticks/sec)
     }
 
     // ====== ALTITUDE HOLD ======
@@ -685,7 +691,7 @@ void RXtask(void* Parameters){
         Ycmd = (float)rx_load[1] / 100.0f;
         Pcmd = (float)rx_load[2] / 100.0f;
         Rcmd = (float)rx_load[3] / 100.0f;
-        killcmd = (float)rx_load[4];
+        killcmd = (rx_load[4] == 0) ? 1.0f : 0.0f; // input: (0 = kill, 1 = not kill)
 
         // convert attitude command from Deg to Rad
         Ycmd = Ycmd * DEG_TO_RAD;
@@ -697,7 +703,7 @@ void RXtask(void* Parameters){
         Ycmd = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX); // Yaw command (max: -180 to 180 deg/s)
         Pcmd = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Pitch command (max: -50 to 50 deg)
         Rcmd = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Roll command (max: -50 to 50 deg)
-        killcmd = constrainFloat(killcmd, 0.0f, 1.0f); // Kill command (0 or 1)
+        killcmd = constrainFloat(killcmd, 0.0f, 1.0f); // Kill command (0 = not kill, 1 = kill)
 
         // // clamp the PID gains
         // kp = constrainFloat(kp, 1.0f, 40.0f);

@@ -28,14 +28,14 @@
 #define GAMMA_B         0.01f
 #define SIGMA           0.01f
 #define B_SIGN          1.0f
-#define CONTROLLER_MODE 0.0f
+#define CONTROLLER_MODE 0.0f // 0 = adaptive, 1 = static
 
 // Initial P-PID Gains:
 #define P   3.0f
 
-#define KP  35.0f
+#define KP  45.0f
 #define KI  10.0f
-#define KD  0.0f
+#define KD  0.005f
 
 // MAX commands in float:
 #define THROTTLE_MAX 1000.0f
