@@ -12,9 +12,8 @@
 #define KI_MAX 35.0f
 #define KI_MIN 8.0f
 
-#define KD_MAX 0.025f
-#define KD_MIN 0.001f
-
+#define KD_MAX 0.025f // 0.025 last
+#define KD_MIN 0.005f
 
 typedef struct {
     float Kp, Ki, Kd;

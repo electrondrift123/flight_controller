@@ -78,6 +78,52 @@ bool sensorsReady(){
   return BMP280_read(&bmpData) && MPU6050_read(&mpuData) && QMC5883P_read(&magData);
 }
 
+// === Timer callback (runs in timer task context!) ===
+static void linkTimeoutCallback(TimerHandle_t xTimer){
+  (void) xTimer;
+
+  connection_ok = false;
+
+  // Safest & fastest way for very short write
+  taskENTER_CRITICAL();
+  // inputList[0] = 0.0f; // we will not kill T for E-landing
+  inputList[1] = 0.0f;
+  inputList[2] = 0.0f;
+  inputList[3] = 0.0f;
+  inputList[4] = 1.0f;   // ← KILL / failsafe
+  taskEXIT_CRITICAL();
+
+  // Alternative (if you really prefer semaphore - less recommended here):
+  // if (xSemaphoreTake(nRF24Mutex, 0) == pdTRUE) { ... xSemaphoreGive(...); }
+  // But critical section is better for this ultra-short operation
+}
+void initLinkWatchdog(void){
+  if (linkWatchdogTimer != NULL) {
+    // already created → avoid double creation
+    return;
+  }
+
+  linkWatchdogTimer = xTimerCreate(
+    "LinkWD",
+    LINK_TIMEOUT_MS / portTICK_PERIOD_MS, // timer period in ticks
+    pdTRUE,                 // auto-reload
+    NULL,
+    linkTimeoutCallback
+  );
+
+  if (linkWatchdogTimer == NULL) {
+      // Critical error - handle somehow (LED blink fast, Serial error, etc.)
+      // For development you can leave it like this:
+      // for(;;) { /* fail safe loop */ }
+      connection_ok = false;
+      taskENTER_CRITICAL();
+      inputList[4] = 1.0f;  // stay killed
+      taskEXIT_CRITICAL();
+  }
+
+  // We do NOT start it here — first valid packet will start/reset it
+}
+
 /////// TASKS /////// 
 void watchdogTask(void* parameters) {
   vTaskDelay(pdMS_TO_TICKS(1000));
@@ -199,7 +245,7 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
 
     // Update shared data: BMP280 altitude
     if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE){
-      telemetry[3] = altSmooth; // Update altitude in telemetry
+      telemetry[0] = altSmooth; // Update altitude in telemetry
       xSemaphoreGive(telemetryMutex);
     }
 
@@ -334,7 +380,7 @@ void PIDtask(void* Parameters){
   // landed flag or take off
   // Static timer and delay constant
   static uint16_t takeoff_counter = 0;
-  static const uint16_t TAKEOFF_DELAY_COUNTS = 100;  // 0.5s at 100Hz (adjust as needed: 75 = 0.75s, 100 = 1s)
+  static const uint16_t TAKEOFF_DELAY_COUNTS = 100;  // 1.0s at 100Hz (adjust as needed: 75 = 0.75s, 100 = 1s)
 
 
   // motors init state:
@@ -397,22 +443,37 @@ void PIDtask(void* Parameters){
     yawRate =   wz; // Gyro Z
 
     if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE){
-      altitude = telemetry[3]; // Get altitude from telemetry
+      altitude = telemetry[0]; // Get altitude from telemetry
+
+      // update telemetry data PID gains: temporary (roll only for analysis)
+      telemetry[1] = pidRoll.Kp;
+      telemetry[2] = pidRollRate.Kp;
+      telemetry[3] = pidRollRate.Ki;
+      telemetry[4] = pidRollRate.Kd;
       xSemaphoreGive(telemetryMutex); // release the mutex
     }
 
     // read user input from nRF24L01 (use mutex):
     if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE){
       // read user input here (radians for angles, rad/s for yaw rate)
-      throttle = inputList[0]; // Throttle
+      // throttle = inputList[0]; // Throttle
+      if (!KILL_MOTORS && !Emergency_Landing) {
+        throttle = inputList[0];  // Only read when normal operation
+      }
       yawInput = inputList[1]; // Yaw Rate input
       pitchInput = inputList[2]; // Pitch input
       rollInput = inputList[3]; // Roll input
 
       KILL_MOTORS = (inputList[4] != 0.0f);
-
       Emergency_Landing = (inputList[5] != 0.0f);
-      // KILL_MOTORS = (inputList[6] != 0.0f);
+
+      // temporary for rod test (roll only):
+      pidRoll.sigma = inputList[6]; // read sigma from inputList[7]
+      pidRollRate.sigma = inputList[6]; // read sigma from inputList[7]
+
+      pidRoll.gamma_base = inputList[7]; // read gamma_base from inputList[6]
+      pidRollRate.gamma_base = inputList[7]; // read gamma_base from inputList[6]
+      
       // ALT_H = (inputList[7] != 0.0f); 
       xSemaphoreGive(nRF24Mutex); // release the mutex
     }
@@ -426,16 +487,12 @@ void PIDtask(void* Parameters){
       resetLyGAPID(&pidPitchRate);
       resetLyGAPID(&pidYawRate);
 
-      throttle = 0.0f;
+      // throttle = 0.0f; // this alone can disable the motors
+      throttle -= 0.05f; // then why this wont decrease the motors? (it does but it wont go to zero)
+      if (throttle < 0.0f) throttle = 0.0f; // Clamp to 0
       rollInput = 0.0f;
       pitchInput = 0.0f;
       yawInput = 0.0f;
-
-      // set motors to 1ms (disable this in real flight)
-      TIM2->CCR1 = 1000;
-      TIM2->CCR2 = 1000;
-      TIM2->CCR3 = 1000;
-      TIM2->CCR4 = 1000;
 
       // Emergency_Landing = true; // reset the flag
     }
@@ -448,6 +505,8 @@ void PIDtask(void* Parameters){
       
       //// TODO: implement emergency landing logic 
       throttle -= 0.05f; // Decrease throttle gradually (-25 ticks/sec)
+      if (throttle < 0.0f) throttle = 0.0f; // Clamp to 0
+      // if (throttle < 350.0f) throttle = 350.0f; // Minimum throttle for landing
     }
 
     // ====== ALTITUDE HOLD ======
@@ -613,7 +672,7 @@ void RXtask(void* Parameters){
   // reply: roll, pitch, yaw, alt, rad status, 2{P, kp, ki, kd}, {Kp, Ki, Kd}
   // 32 bytes nRF24 max can handle, sent:  32 bytes, int16 = 2 bytes
   // int16_t local_telemetry[16] = {0, 0, 0, 0, 0, 0,0,0,0, 0,0,0,0, 0,0,0}; 
-  int16_t local_telemetry[5] = {0, 0, 0, 0, 0}; 
+  int16_t local_telemetry[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0}; 
   int mode = 0;
   // float kp, ki, kd, kill;
   float Tcmd = 0.0f;
@@ -621,9 +680,26 @@ void RXtask(void* Parameters){
   float Pcmd = 0.0f;
   float Rcmd = 0.0f;
   float killcmd = 0.0f;
-  int16_t rx_load[5] = {0, 0, 0, 0, 0};
+  float e_landing = 0.0f;
+  float sigma = 0.01f;
+  float gamma = 0.01f;
+  int16_t rx_load[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
   int counter_print = 0;
+
+
+  // init failsafe radio link
+  initLinkWatchdog();
+
+  // Start killed
+  connection_ok = false;
+  taskENTER_CRITICAL();
+  inputList[0] = 0.0f;
+  inputList[1] = 0.0f;
+  inputList[2] = 0.0f;
+  inputList[3] = 0.0f;
+  inputList[4] = 1.0f;
+  taskEXIT_CRITICAL();
 
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -634,6 +710,17 @@ void RXtask(void* Parameters){
     // Handle data ready
     if (flags & RF24_RX_DR) {
       while (radio.available()) {
+        // We are alive!
+        connection_ok = true;
+
+        // Restart watchdog (this is the magic line)
+        // Critical: Start or restart watchdog
+        if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
+          xTimerStart(linkWatchdogTimer, 0);
+        } else {
+          xTimerReset(linkWatchdogTimer, 0);
+        }
+
         local_telemetry[4] = 1; // 1 = connected, 0 = disconnected
 
         if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
@@ -644,23 +731,15 @@ void RXtask(void* Parameters){
         }
         if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
           local_telemetry[3] = (int16_t) telemetry[3]; // altitude
+
+          // temporary for analysis (PID gains in Roll):
+          local_telemetry[5] = (int16_t)(pidRoll.Kp * 100.0f);
+          local_telemetry[6] = (int16_t)(pidRollRate.Kp * 100.0f);
+          local_telemetry[7] = (int16_t)(pidRollRate.Ki * 100.0f);
+          local_telemetry[8] = (int16_t)(pidRollRate.Kd * 100.0f);
+
           xSemaphoreGive(telemetryMutex);
         }
-
-        // // Extract PID gains
-        // local_telemetry[5] = (int16_t)(pidRoll.Kp * 100);
-        // local_telemetry[6] = (int16_t)(pidRollRate.Kp * 100);
-        // local_telemetry[7] = (int16_t)(pidRollRate.Ki * 100);
-        // local_telemetry[8] = (int16_t)(pidRollRate.Kd * 100);
-        
-        // local_telemetry[9] = (int16_t)(pidPitch.Kp * 100);
-        // local_telemetry[10] = (int16_t)(pidPitchRate.Kp * 100);
-        // local_telemetry[11] = (int16_t)(pidPitchRate.Ki * 100);
-        // local_telemetry[12] = (int16_t)(pidPitchRate.Kd * 100);
-
-        // local_telemetry[13] = (int16_t)(pidYawRate.Kp * 100);
-        // local_telemetry[14] = (int16_t)(pidYawRate.Ki * 100);
-        // local_telemetry[15] = (int16_t)(pidYawRate.Kd * 100);
 
         // Write ACK payload BEFORE read
         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
@@ -679,19 +758,16 @@ void RXtask(void* Parameters){
         //   xSemaphoreGive(serialMutex);
         // }
 
-        // // 1. store 
-        // mode = (int)rx_load[0];
-        // kp = (float)rx_load[1] / 100.00f; // divide by 100 to get the actual value
-        // ki = (float)rx_load[2] / 100.00f;
-        // kd = (float)rx_load[3] / 100.00f;
-
         // int16_t -> float data (scaled back by 1/100)
         // angle command expected in deg with 2 dec precision:
-        Tcmd = (float)rx_load[0] * 10.0f; // (expected: 0-100 in (%) for 0-1000 us tick)
+        Tcmd = (float)rx_load[0]; // (expected: 0-1000 us tick)
         Ycmd = (float)rx_load[1] / 100.0f;
         Pcmd = (float)rx_load[2] / 100.0f;
         Rcmd = (float)rx_load[3] / 100.0f;
-        killcmd = (rx_load[4] == 0) ? 1.0f : 0.0f; // input: (0 = kill, 1 = not kill)
+        killcmd = (rx_load[4] == 0) ? 0.0f : 1.0f; // input: (1 = kill, 0 = not kill)
+        // e_landing = (rx_load[5] == 0) ? 0.0f : 1.0f; // Emergency landing flag
+        sigma = (float)rx_load[6] / 1000.0f; // 3 decimal precision
+        gamma = (float)rx_load[7] / 1000.0f;
 
         // convert attitude command from Deg to Rad
         Ycmd = Ycmd * DEG_TO_RAD;
@@ -700,23 +776,26 @@ void RXtask(void* Parameters){
 
         // clamp it to the safe range 
         Tcmd = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX); // Throttle command
-        Ycmd = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX); // Yaw command (max: -180 to 180 deg/s)
-        Pcmd = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Pitch command (max: -50 to 50 deg)
-        Rcmd = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Roll command (max: -50 to 50 deg)
-        killcmd = constrainFloat(killcmd, 0.0f, 1.0f); // Kill command (0 = not kill, 1 = kill)
+        Ycmd = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX); // Yaw command (max: -360 to 360 deg/s)
+        Pcmd = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Pitch command (max: -30 to 30 deg)
+        Rcmd = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Roll command (max: -30 to 30 deg)
+        killcmd = constrainFloat(killcmd, 0.0f, 1.0f); // Kill command 
+        e_landing = constrainFloat(e_landing, 0.0f, 1.0f); // Emergency landing flag
+        sigma = constrainFloat(sigma, 0.001f, 1.0f);
+        gamma = constrainFloat(gamma, 0.001f, 1.0f);
 
-        // // clamp the PID gains
-        // kp = constrainFloat(kp, 1.0f, 40.0f);
-        // ki = constrainFloat(ki, 0.0f, 20.0f);
-        // kd = constrainFloat(kd, 0.0f, 10.0f);
-
-        // 2. update the pid params
+        // 2. update the data in inputList with mutex
         if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {  
           inputList[0] = Tcmd; // update throttle
           inputList[1] = Ycmd; // update yaw
           inputList[2] = Pcmd; // update pitch
           inputList[3] = Rcmd; // update roll
           inputList[4] = killcmd; // update kill flag in inputList
+          inputList[5] = e_landing; // Emergency landing flag
+
+          // temporary for analysis: roll only
+          inputList[6] = sigma; 
+          inputList[7] = gamma;
           xSemaphoreGive(nRF24Mutex);
         }
 
@@ -729,95 +808,6 @@ void RXtask(void* Parameters){
     }
   }
 }
-
-// void RXtask(void* Parameters){
-//   int16_t local_telemetry[5] = {0, 0, 0, 0, 0}; 
-//   int16_t rx_load[5];
-
-//   static uint32_t lastPacketTime = 0;
-//   const uint32_t CONNECTION_TIMEOUT_MS = 500;  // 0.5 second timeout
-
-//   // Persistent commands — these keep last good values
-//   static float Tcmd = 0.0f;
-//   static float Ycmd = 0.0f;
-//   static float Pcmd = 0.0f;
-//   static float Rcmd = 0.0f;
-//   static float killcmd = 0.0f;
-
-//   for (;;) {
-//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-//     uint8_t flags = radio.clearStatusFlags();
-//     bool packetReceived = false;
-
-//     if (flags & RF24_RX_DR) {
-//       while (radio.available()) {
-//         packetReceived = true;
-//         local_telemetry[4] = 1; // 1 = connected, 0 = disconnected
-
-//         // Update telemetry (roll, pitch, yaw, alt)
-//         if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//           local_telemetry[0] = (int16_t)eulerAngles[0];
-//           local_telemetry[1] = (int16_t)eulerAngles[1];
-//           local_telemetry[2] = (int16_t)eulerAngles[2];
-//           xSemaphoreGive(eulerAnglesMutex);
-//         }
-//         if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//           local_telemetry[3] = (int16_t)telemetry[3];
-//           xSemaphoreGive(telemetryMutex);
-//         }
-
-//         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
-//         radio.read(rx_load, sizeof(rx_load));
-//         radio.startListening();
-
-//         // Decode fresh commands
-//         Tcmd    = constrainFloat((float)rx_load[0] * 10.0f, THROTTLE_MIN, THROTTLE_MAX);
-//         Ycmd    = constrainFloat((float)rx_load[1] / 100.0f * DEG_TO_RAD, -YAW_MAX, YAW_MAX);
-//         Pcmd    = constrainFloat((float)rx_load[2] / 100.0f * DEG_TO_RAD, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//         Rcmd    = constrainFloat((float)rx_load[3] / 100.0f * DEG_TO_RAD, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//         killcmd = constrainFloat((float)rx_load[4], 0.0f, 1.0f);
-
-//         lastPacketTime = millis();  // Refresh timeout
-//       }
-//     }
-
-//     if (flags & 0x10) {
-//       radio.flush_tx();
-//     }
-
-//     // === FAILSAFE UPDATE: Runs every task cycle ===
-//     if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-//       bool isConnected = (millis() - lastPacketTime < CONNECTION_TIMEOUT_MS);
-
-//       // if (!isConnected && (local_telemetry[3] > 2.0f)) {
-//       //   // Slowly reduce throttle for controlled descent
-//       //   static float descentThrottle = Tcmd;
-//       //   descentThrottle *= 0.98f; // Gradually reduce
-//       //   inputList[0] = descentThrottle;
-//       // }
-
-//       if (isConnected) {
-//         // Use fresh commands
-//         inputList[0] = Tcmd;        // Throttle
-//         inputList[1] = Ycmd;        // Yaw
-//         inputList[2] = Pcmd;        // Pitch
-//         inputList[3] = Rcmd;        // Roll
-//         inputList[4] = killcmd;     // Kill flag
-//       } else {
-//         // === CONNECTION LOST: FORCE SAFE STATE ===
-//         inputList[0] = 0.0f;         // Throttle = 0 (MOTORS WILL SPIN DOWN)
-//         inputList[1] = 0.0f;         // No yaw input
-//         inputList[2] = 0.0f;         // No pitch
-//         inputList[3] = 0.0f;         // No roll
-//         inputList[4] = 1.0f;         // Optional: FORCE KILL (if your code checks this)
-//         // inputList[5] = 1.0f;          // Emergency Landing flag 
-//       }
-
-//       xSemaphoreGive(nRF24Mutex);
-//     }
-//   }
-// }
 
 //// TODO: find ADC pin for this task
 void batteryMonitorTask(void* Parameters){
