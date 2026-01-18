@@ -190,7 +190,6 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
         wx = mpuData.wx;
         wy = mpuData.wy;
         wz = mpuData.wz;
-        // Raw data from BMP280
         mx = magData.mx;
         my = magData.my;
         mz = magData.mz;
@@ -346,7 +345,7 @@ void PIDtask(void* Parameters){
   static float pitchInputFiltered = 0.0f;
   static float yawInputFiltered = 0.0f;
 
-  const float alpha = 0.8f;  // adjust as needed
+  const float alpha = 0.2f;  // adjust as needed
 
   // flags
   bool ALT_H = false; // Altitude Hold flag

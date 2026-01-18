@@ -26,7 +26,7 @@ void initLyGAPID(LyGAPIDControllerData_t* lygapid, float Kp, float Ki, float Kd,
 
     lygapid->landed = 1.0f; // 1 = true, 0 = false
 
-    Butterworth2ndLPF_Init(&pidLPF, 40.0f, 500.0f);  // 35–50 Hz; lower than racing
+    Butterworth2ndLPF_Init(&pidLPF, 80.0f, 500.0f);  // 35–50 Hz; lower than racing
 }
 
 float computeLyGAPID_out(LyGAPIDControllerData_t* lygapid, float setpoint, float actual, float dt){
