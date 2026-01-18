@@ -74,8 +74,9 @@ extern LyGAPIDControllerData_t pidYawRate;
 // PID params
 
 // Butterworth 2nd order LPF
-extern Butterworth2ndLPF_t accelLPF; // Accelerometer LPF
-extern Butterworth2ndLPF_t gyroLPF;  // Gyroscope LPF
+// extern Butterworth2ndLPF_t accelLPF; // Accelerometer LPF
+// extern Butterworth2ndLPF_t gyroLPF;  // Gyroscope LPF
+extern Butterworth2ndLPF_t pidLPF;  // Gyroscope LPF
 
 // Failsafe for Radio 
 extern TimerHandle_t linkWatchdogTimer;

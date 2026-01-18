@@ -6,16 +6,16 @@
 typedef struct {
     float b0, b1, b2; // Coefficients for the filter
     float a1, a2;     // Coefficients for the feedback
-    float x1_x, x2_x, x1_y, x2_y, x1_z, x2_z;     // Previous input values
-    float y1_x, y2_x, y1_y, y2_y, y1_z, y2_z;     // Previous output values
+    float x1, x2;     // Previous input values
+    float y1, y2;     // Previous output values
 
-    float output_x, output_y, output_z;
+    float output;
 } Butterworth2ndLPF_t;
 
 void Butterworth2ndLPF_Init(Butterworth2ndLPF_t* filter, float cutoffFrequency, float sampleRate);
 
 void Butterworth2ndLPF_Reset(Butterworth2ndLPF_t* filter);
 
-void Butterworth2ndLPF_Update(Butterworth2ndLPF_t* filter, float x, float y, float z);
+void Butterworth2ndLPF_Update(Butterworth2ndLPF_t* filter, float x);
 
 #endif // BUTTERWORTH2NDLPF_H

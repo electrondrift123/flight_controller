@@ -67,10 +67,6 @@ void setup() {
   initLyGAPID(&pidPitchRate, KP, KI, KD, B_SIGN, GAMMA_B, SIGMA, U_MAX_PITCH_RATE, CONTROLLER_MODE);
   initLyGAPID(&pidYawRate,   KP, KI, KD, B_SIGN, GAMMA_B, SIGMA, U_MAX_YAW_RATE, CONTROLLER_MODE); 
 
-  // Butterworth 2nd order LPF initialization
-  Butterworth2ndLPF_Init(&accelLPF, 50.0f, 1000.0f); // Cutoff frequency: 50 Hz, Sample rate: 1000 Hz
-  Butterworth2ndLPF_Init(&gyroLPF, 30.0f, 1000.0f); // Cutoff frequency: 30 Hz, Sample rate: 1000 Hz
-
   // interrupts()
   freeRTOS_tasks_init(); // Initialize FreeRTOS tasks
   Serial.println("FreeRTOS tasks initialized!");

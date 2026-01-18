@@ -195,17 +195,6 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
         my = magData.my;
         mz = magData.mz;
 
-        Butterworth2ndLPF_Update(&accelLPF, ax, ay, az); // Apply LPF: Fc = 50 Hz
-        Butterworth2ndLPF_Update(&gyroLPF, wx, wy, wz); // Apply LPF: Fc = 30 Hz
-
-        // LPF outputs
-        ax = accelLPF.output_x; // LPF output for Accel X
-        ay = accelLPF.output_y; // LPF output for Accel Y
-        az = accelLPF.output_z; // LPF output for Accel Z
-        wx = gyroLPF.output_x;  // LPF output for Gyro X
-        wy = gyroLPF.output_y;  // LPF output for Gyro Y
-        wz = gyroLPF.output_z;  // LPF output for Gyro Z
-
         local_altitude = bmpData.altitude; // Store altitude locally
       }else {
         if (xSemaphoreTake(serialMutex, portMAX_DELAY)){

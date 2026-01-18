@@ -15,8 +15,10 @@ LyGAPIDControllerData_t pidRollRate;
 LyGAPIDControllerData_t pidPitchRate;
 LyGAPIDControllerData_t pidYawRate;
 
-Butterworth2ndLPF_t accelLPF; // Accelerometer LPF
-Butterworth2ndLPF_t gyroLPF;  // Gyroscope LPF
+// Butterworth2ndLPF_t accelLPF; // Accelerometer LPF
+// Butterworth2ndLPF_t gyroLPF;  // Gyroscope LPF
+Butterworth2ndLPF_t pidLPF;  // Gyroscope LPF (init inside LyGAPID)
+
 
 // Failsafe for Radio
 // === Global / static variables ===

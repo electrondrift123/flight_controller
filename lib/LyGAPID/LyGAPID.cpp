@@ -1,4 +1,6 @@
 #include "LyGAPID.h"
+#include "Butterworth2ndLPF.h"
+#include "shared_data.h"
 
 void initLyGAPID(LyGAPIDControllerData_t* lygapid, float Kp, float Ki, float Kd, float b_sign,
              float gamma_base, float sigma, float output_limit, float mode){
@@ -23,6 +25,8 @@ void initLyGAPID(LyGAPIDControllerData_t* lygapid, float Kp, float Ki, float Kd,
     lygapid->i_limit = lygapid->output_limit * 0.40f; // 40% of output limit
 
     lygapid->landed = 1.0f; // 1 = true, 0 = false
+
+    Butterworth2ndLPF_Init(&pidLPF, 40.0f, 500.0f);  // 35–50 Hz; lower than racing
 }
 
 float computeLyGAPID_out(LyGAPIDControllerData_t* lygapid, float setpoint, float actual, float dt){
@@ -59,8 +63,10 @@ float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float 
     float error = setpoint - actual;
 
     float derivative = (error - lygapid->prev_error) / dt;
-    float alpha = 0.2; // adjustable (LPF constant)
-    derivative = alpha * derivative + (1 - alpha) * lygapid->prev_derivative;
+    // float alpha = 0.15; // adjustable (LPF constant) (lower: stronger lpf, more lag)
+    // derivative = alpha * derivative + (1 - alpha) * lygapid->prev_derivative;
+    Butterworth2ndLPF_Update(&pidLPF, derivative);
+    derivative = pidLPF.output;
 
     float u_ = lygapid->Kp * error + lygapid->Ki * lygapid->integral + lygapid->Kd * derivative;
 
