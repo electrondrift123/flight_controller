@@ -1,5 +1,6 @@
 #include "LyGAPID.h"
 #include "Butterworth2ndLPF.h"
+#include "EMA.h"
 #include "shared_data.h"
 
 void initLyGAPID(LyGAPIDControllerData_t* lygapid, float Kp, float Ki, float Kd, float b_sign,
@@ -26,7 +27,8 @@ void initLyGAPID(LyGAPIDControllerData_t* lygapid, float Kp, float Ki, float Kd,
 
     lygapid->landed = 1.0f; // 1 = true, 0 = false
 
-    Butterworth2ndLPF_Init(&pidLPF, 80.0f, 500.0f);  // 35–50 Hz; lower than racing
+    // Butterworth2ndLPF_Init(&pidLPF, 80.0f, 500.0f);  // 35–50 Hz; lower than racing
+    emaInit(&pidLPF, 2.0f, 80.0f, 500.0f); // 35–50 Hz; lower than racing
 }
 
 float computeLyGAPID_out(LyGAPIDControllerData_t* lygapid, float setpoint, float actual, float dt){
@@ -63,9 +65,8 @@ float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float 
     float error = setpoint - actual;
 
     float derivative = (error - lygapid->prev_error) / dt;
-    // float alpha = 0.15; // adjustable (LPF constant) (lower: stronger lpf, more lag)
-    // derivative = alpha * derivative + (1 - alpha) * lygapid->prev_derivative;
-    Butterworth2ndLPF_Update(&pidLPF, derivative);
+    // Butterworth2ndLPF_Update(&pidLPF, derivative);
+    emaUpdate(&pidLPF, derivative);
     derivative = pidLPF.output;
 
     float u_ = lygapid->Kp * error + lygapid->Ki * lygapid->integral + lygapid->Kd * derivative;

@@ -11,6 +11,7 @@
 #include "PID.h"
 #include "LyGAPID.h"
 #include "Butterworth2ndLPF.h"
+#include "EMA.h"
 
 #include "FreeRTOS.h"
 #include "timers.h"
@@ -76,7 +77,8 @@ extern LyGAPIDControllerData_t pidYawRate;
 // Butterworth 2nd order LPF
 // extern Butterworth2ndLPF_t accelLPF; // Accelerometer LPF
 // extern Butterworth2ndLPF_t gyroLPF;  // Gyroscope LPF
-extern Butterworth2ndLPF_t pidLPF;  // Gyroscope LPF
+// extern Butterworth2ndLPF_t pidLPF;  // Gyroscope LPF
+extern EMA_t pidLPF; // EMA for PID output
 
 // Failsafe for Radio 
 extern TimerHandle_t linkWatchdogTimer;
