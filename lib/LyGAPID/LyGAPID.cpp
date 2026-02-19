@@ -28,7 +28,7 @@ void initLyGAPID(LyGAPIDControllerData_t* lygapid, float Kp, float Ki, float Kd,
     lygapid->landed = 1.0f; // 1 = true, 0 = false
 
     // Butterworth2ndLPF_Init(&pidLPF, 80.0f, 500.0f);  // 35–50 Hz; lower than racing
-    emaInit(&pidLPF, 2.0f, 80.0f, 500.0f); // 35–50 Hz; lower than racing
+    emaInit(&pidLPF, 2.0f, 30.0f, 500.0f); // 35–50 Hz; lower than racing
 }
 
 float computeLyGAPID_out(LyGAPIDControllerData_t* lygapid, float setpoint, float actual, float dt){
@@ -48,7 +48,7 @@ float computeLyGAPID_out(LyGAPIDControllerData_t* lygapid, float setpoint, float
 
     if (lygapid->mode <= 0.0f){
         // Adaptation
-        float gamma_p = lygapid->gamma_base / (1.0f + lygapid->Kp);
+        float gamma_p = 5.0f * lygapid->gamma_base;
 
         float dKp = gamma_p * lygapid->b_sign * error * error - lygapid->sigma * gamma_p * lygapid->Kp;
 
@@ -106,9 +106,9 @@ float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float 
 
     if (lygapid->mode <= 0.0f){
         // Adaptation
-        float gamma_p = lygapid->gamma_base / (1.0f + lygapid->Kp);
-        float gamma_i = lygapid->gamma_base / (1.0f + lygapid->Ki);
-        float gamma_d = lygapid->gamma_base / (1.0f + lygapid->Kd);
+        float gamma_p = lygapid->gamma_base;
+        float gamma_i = lygapid->gamma_base;
+        float gamma_d = lygapid->gamma_base;
 
         float dKp = gamma_p * lygapid->b_sign * error * error - lygapid->sigma * gamma_p * lygapid->Kp;
         float dKi = gamma_i * lygapid->b_sign * lygapid->integral * error - lygapid->sigma * gamma_i * lygapid->Ki;

@@ -11,7 +11,7 @@ bool MPU6050_init(void) {
   // Low-pass filter config
   Wire.beginTransmission(MPU6050_ADDR);
   Wire.write(0x1A);
-  Wire.write(0x05); // 0x01 for faster response
+  Wire.write(0x03); // 0x01 for faster response (0x05 former value)
   if (Wire.endTransmission() != 0) return false;
   // Accelerometer config (+/- 8g)
   Wire.beginTransmission(MPU6050_ADDR);

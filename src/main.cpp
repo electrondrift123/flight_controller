@@ -24,14 +24,17 @@ void enableFPU() {
 }
 
 void setup() {
-  enableFPU(); // Enable FPU before any floating-point operations
+  // enableFPU(); // Enable FPU before any floating-point operations
   Serial.begin(115200);
   // while (!Serial);
   delay(250);
   Serial.println("Starting setup...");
 
+  Wire.setSCL(PB6);
+  Wire.setSDA(PB7);
   Wire.begin();
   // Wire.setClock(400000); // Set I2C clock to 400 kHz - if acticve, it causes issues with BMP280
+
   delay(250);
   Serial.println("i2c ready!");
 
@@ -39,21 +42,21 @@ void setup() {
   delay(250);
   Serial.println("SPI ready!");
 
-  sensors_init(); // the sensors initialization 
   used_gpio_init(); // Initialize GPIOs (buzzer, motors, blink)
+  sensors_init(); // the sensors initialization 
   mutexes_init(); // Initialize mutexes
   delay(300); // delay before radio init
 
-  if (!main_rx_init()){
-    Serial.println("Error initializing main_rx");
-    // buzz_on();
-    while (1){
-      buzz_on();
-      delay(500);
-      buzz_off();
-      delay(500);
-    }
-  } // Initialize nRF24 radio
+  // if (!main_rx_init()){
+  //   Serial.println("Error initializing main_rx");
+  //   // buzz_on();
+  //   while (1){
+  //     buzz_on();
+  //     delay(500);
+  //     buzz_off();
+  //     delay(500);
+  //   }
+  // } // Initialize nRF24 radio
  
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!
@@ -93,3 +96,4 @@ void loop() {
 // 1. input from human: deg, then convert it into rad
 
 
+ 

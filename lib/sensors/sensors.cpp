@@ -10,7 +10,6 @@
 
 void buzzer_init_failed(void){
   int interval = 100; // 500 ms
-  Serial.println("Buzzer init failed!");
   for (int i = 0; i < 10; i++) {
     buzz_on(); // Buzzer ON
     delay(interval); // Wait for 500ms

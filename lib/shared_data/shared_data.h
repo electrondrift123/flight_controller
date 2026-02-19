@@ -29,8 +29,8 @@
 #define U_MAX_YAW_RATE      100.0f
 
 // Adaptive PID config: 
-#define GAMMA_B         0.01f
-#define SIGMA           0.002f
+#define GAMMA_B         500.0f
+#define SIGMA           0.001f
 #define B_SIGN          1.0f
 #define CONTROLLER_MODE 0.0f // 0 = adaptive, 1 = static
 
@@ -78,6 +78,7 @@ extern LyGAPIDControllerData_t pidYawRate;
 // extern Butterworth2ndLPF_t accelLPF; // Accelerometer LPF
 // extern Butterworth2ndLPF_t gyroLPF;  // Gyroscope LPF
 // extern Butterworth2ndLPF_t pidLPF;  // Gyroscope LPF
+extern EMA_t axLPF, ayLPF, azLPF; // Accelerometer LPF
 extern EMA_t pidLPF; // EMA for PID output
 
 // Failsafe for Radio 

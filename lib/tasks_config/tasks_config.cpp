@@ -21,6 +21,7 @@
 #include "WDT.h"
 
 #include "Butterworth2ndLPF.h"
+#include "EMA.h"
 
 // DEFINE PRIORITY LEVELS (status: working)
 #define PRIORITY_PID_FUSION   1 // 500 Hz -> try prio: 2 (radio task starve)
@@ -172,6 +173,11 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
   float local_altitude; 
   float ax, ay, az, wx, wy, wz, mx, my, mz; // Madgwick
 
+  // init for Accel LPF PT1
+  emaInit(&axLPF, 1.0f, 15.0f, 1000.0f); // 15 Hz cutoff
+  emaInit(&ayLPF, 1.0f, 15.0f, 1000.0f); // 15 Hz cutoff
+  emaInit(&azLPF, 1.0f, 15.0f, 1000.0f); // 15 Hz cutoff
+
   float dt;
 
   for (;;) {
@@ -193,6 +199,13 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
         mx = magData.mx;
         my = magData.my;
         mz = magData.mz;
+
+        // Apply EMA filter to accelerometer data
+        emaUpdate(&axLPF, ax);
+        emaUpdate(&ayLPF, ay);
+        emaUpdate(&azLPF, az);
+
+        ax = axLPF.output; // Get filtered X
 
         local_altitude = bmpData.altitude; // Store altitude locally
       }else {
@@ -237,91 +250,20 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       xSemaphoreGive(telemetryMutex);
     }
 
-    // // debug printf
-    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-    //   Serial.print("Euler: ");
-    //   Serial.print(madData.roll); Serial.print(", ");
-    //   Serial.print(madData.pitch); Serial.print(", ");
-    //   Serial.println(madData.yaw);
+    // debug printf
+    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+      Serial.print("Euler: ");
+      Serial.print(madData.roll); Serial.print(", ");
+      Serial.print(madData.pitch); Serial.print(", ");
+      Serial.println(madData.yaw);
 
-    //   Serial.print("Altitude: "); Serial.println(altSmooth);
-    //   xSemaphoreGive(serialMutex);
-    // }
+      Serial.print("Altitude: "); Serial.println(altSmooth);
+      xSemaphoreGive(serialMutex);
+    }
 
     vTaskDelayUntil(&lastWakeTime, intervalTicks); 
   }
 }
-
-// Madgwick filter task (sensor fusion) 1 kHz
-// void MadgwickTask(void* Parameters) {
-//   const TickType_t intervalTicks = pdMS_TO_TICKS(4);  // 4ms max
-//   TickType_t prevTick = xTaskGetTickCount();
-//   TickType_t lastWakeTime = xTaskGetTickCount();
-
-//   // local varibles for sensors data
-//   float ax, ay, az, wx, wy, wz, mx, my, mz;
-
-//   for (;;) {
-//     TickType_t nowTick = xTaskGetTickCount();
-//     TickType_t deltaTick = nowTick - prevTick;
-
-//     if (deltaTick >= intervalTicks) {
-//       float dt = deltaTick * portTICK_PERIOD_MS / 1000.0f;  // dt in seconds
-//       prevTick = nowTick;
-
-//       // read the sensors data
-//       if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//         ax = MadgwickSensorList[0]; // Accel X
-//         ay = MadgwickSensorList[1]; // Accel Y
-//         az = MadgwickSensorList[2]; // Accel Z
-//         wx = MadgwickSensorList[3]; // Gyro X
-//         wy = MadgwickSensorList[4]; // Gyro Y
-//         wz = MadgwickSensorList[5]; // Gyro Z
-//         mx = MadgwickSensorList[6]; // Mag X
-//         my = MadgwickSensorList[7]; // Mag Y
-//         mz = MadgwickSensorList[8]; // Mag Z
-//         xSemaphoreGive(madgwickMutex);
-//       }
-
-//       MadgwickFilterUpdate(&madData,
-//         wx, wy, wz,
-//         ax, ay, az,
-//         mx, my, mz,
-//         dt);
-
-//       MadgwickGetEuler(&madData);
-
-//       if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//         // units: 
-//         eulerAngles[0] = madData.roll;
-//         eulerAngles[1] = madData.pitch;
-//         eulerAngles[2] = madData.yaw;
-//         xSemaphoreGive(eulerAnglesMutex);
-//       }
-
-//       //// Print debug
-//       // if (xSemaphoreTake(serialMutex, portMAX_DELAY)) {
-//       //   Serial.print("Euler: ");
-//       //   Serial.print(madData.roll); Serial.print(", ");
-//       //   Serial.print(madData.pitch); Serial.print(", ");
-//       //   Serial.println(madData.yaw);
-
-//       //   // It prints what I expected (It works fine except for magData):
-//       //   // Acc
-//       //   // Serial.print("Accel: "); Serial.print(mpuData.ax); Serial.print(", ");
-//       //   // Serial.print(ay); Serial.print(", "); Serial.println(az);
-//       //   // Gyro
-//       //   // Serial.print("Gyro: "); Serial.print(mpuData.wx); Serial.print(", ");
-//       //   // Serial.print(wy); Serial.print(", "); Serial.println(wz);
-//       //   // Mag
-//       //   // Serial.print("Mag: "); Serial.print(magData.mx); Serial.print(", ");
-//       //   // Serial.print(my); Serial.print(", "); Serial.println(mz);
-//       //   xSemaphoreGive(serialMutex);
-//       // }
-//     }
-//     vTaskDelayUntil(&lastWakeTime, intervalTicks);
-//   }
-// }
 
 void PIDtask(void* Parameters){
   TickType_t lastWakeTime = xTaskGetTickCount();
@@ -375,11 +317,11 @@ void PIDtask(void* Parameters){
   float motor_cmd[4] = {1000.0f, 1000.0f, 1000.0f, 1000.0f};
   float cmd_bias = 1000.0f;
 
-  // Hold min for arming
-  TIM2->CCR1 = (uint16_t)motor_cmd[0];
-  TIM2->CCR2 = (uint16_t)motor_cmd[1];
-  TIM2->CCR3 = (uint16_t)motor_cmd[2];
-  TIM2->CCR4 = (uint16_t)motor_cmd[3];
+  // // Hold min for arming
+  // TIM2->CCR1 = (uint16_t)motor_cmd[0];
+  // TIM2->CCR2 = (uint16_t)motor_cmd[1];
+  // TIM2->CCR3 = (uint16_t)motor_cmd[2];
+  // TIM2->CCR4 = (uint16_t)motor_cmd[3];
 
   vTaskDelay(pdMS_TO_TICKS(3000)); // delay for arming motor
 
@@ -718,7 +660,7 @@ void RXtask(void* Parameters){
           xSemaphoreGive(eulerAnglesMutex);
         }
         if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-          local_telemetry[3] = (int16_t) telemetry[3]; // altitude
+          local_telemetry[3] = (int16_t) telemetry[0]; // altitude
 
           // temporary for analysis (PID gains in Roll):
           local_telemetry[5] = (int16_t)(pidRoll.Kp * 100.0f);
@@ -797,22 +739,27 @@ void RXtask(void* Parameters){
   }
 }
 
-//// TODO: find ADC pin for this task
+//// TODO: find ADC pin for this task (12 bit res: [12.6V: 2606, 11.4V: 2358])
 void batteryMonitorTask(void* Parameters){
-  TickType_t interval = pdMS_TO_TICKS(4000);
-  // TickType_t lastWakeTime = x
+  TickType_t interval = pdMS_TO_TICKS(200);
+  TickType_t lastWakeTime = xTaskGetTickCount();
+
   float batteryVoltage; // Variable to hold battery voltage
 
   for (;;){
     // Read battery voltage
-
+    uint16_t adc_value = readVbat();
+    float batteryVoltage = (adc_value);  // 12-bit res
+    
     // Update shared data
     if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)) {
       telemetry[5] = batteryVoltage; // Update battery voltage in telemetry
       xSemaphoreGive(telemetryMutex);
     }
+
+    // Serial.print("Batt: "); Serial.println(batteryVoltage);
     
-    vTaskDelay(interval);
+    vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
 }
 
@@ -874,33 +821,33 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
-  result = xTaskCreate(
-    RXtask,
-    "nRF24 RX task",
-    256,
-    NULL,
-    PRIORITY_RADIO,
-    &radioTaskHandle
-  );
-  if (result != pdPASS) {
-    // Handle task creation failure
-    Serial.println("Failed to create RXtask");
-    while (1); // Infinite loop to indicate failure
-  }
-
   // result = xTaskCreate(
-  //   batteryMonitorTask,
-  //   "Battery Monitor Task",
+  //   RXtask,
+  //   "nRF24 RX task",
   //   256,
   //   NULL,
-  //   1,
-  //   NULL
+  //   PRIORITY_RADIO,
+  //   &radioTaskHandle
   // );
   // if (result != pdPASS) {
   //   // Handle task creation failure
-  //   Serial.println("Failed to create batteryMonitorTask");
+  //   Serial.println("Failed to create RXtask");
   //   while (1); // Infinite loop to indicate failure
   // }
+
+  result = xTaskCreate(
+    batteryMonitorTask,
+    "Battery Monitor Task",
+    256,
+    NULL,
+    1,
+    NULL
+  );
+  if (result != pdPASS) {
+    // Handle task creation failure
+    Serial.println("Failed to create batteryMonitorTask");
+    while (1); // Infinite loop to indicate failure
+  }
 }
 
 
@@ -908,8 +855,4 @@ void freeRTOS_tasks_init(void){
 // Priority tasks are all set to 1 (working) - i will try to change for the better: status: trying...
 
 //// TODO: 
-// - PID, Fusion, Sensor read = 500 Hz, 500 Hz, 1 kHz (done)
-// - PID highest priority without sacrificing stability of other tasks (...)
-// - Cut the motor when the signal is lost for more than 0.5 second
-// - fix the integral windup issue (...)
-// - PID gains ranges
+// - arming problem
