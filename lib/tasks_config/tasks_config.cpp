@@ -22,6 +22,7 @@
 
 #include "Butterworth2ndLPF.h"
 #include "EMA.h"
+#include "Mahony.h"
 
 // DEFINE PRIORITY LEVELS (status: working)
 #define PRIORITY_PID_FUSION   1 // 500 Hz -> try prio: 2 (radio task starve)
@@ -206,6 +207,8 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
         emaUpdate(&azLPF, az);
 
         ax = axLPF.output; // Get filtered X
+        ay = ayLPF.output; // Get filtered Y
+        az = azLPF.output; // Get filtered Z
 
         local_altitude = bmpData.altitude; // Store altitude locally
       }else {
@@ -257,7 +260,8 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       Serial.print(madData.pitch); Serial.print(", ");
       Serial.println(madData.yaw);
 
-      Serial.print("Altitude: "); Serial.println(altSmooth);
+      // Serial.print("Altitude: "); Serial.println(altSmooth);
+      // Serial.print(mx); Serial.print(", "); Serial.print(my); Serial.print(", "); Serial.println(mz);
       xSemaphoreGive(serialMutex);
     }
 

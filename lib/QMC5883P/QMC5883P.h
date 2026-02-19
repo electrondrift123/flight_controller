@@ -7,9 +7,9 @@
 
 // Not yet tried mounted on drone
 // USE THE ARDUINO SKETCH I MADE FOR RECALIBRATION
-static float minX = 945, maxX = 1650; 
-static float minY = 620, maxY = 1250; 
-static float minZ = 5120, maxZ = 5845; 
+static float minX = 1400, maxX = 2200; 
+static float minY = 900, maxY = 1700; 
+static float minZ = 5100, maxZ = 5500; 
 
 typedef struct {
   float mx, my, mz;
