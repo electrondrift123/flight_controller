@@ -253,17 +253,17 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       xSemaphoreGive(telemetryMutex);
     }
 
-    // debug printf
-    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-      Serial.print("Euler: ");
-      Serial.print(madData.roll); Serial.print(", ");
-      Serial.print(madData.pitch); Serial.print(", ");
-      Serial.println(madData.yaw);
+    // // debug printf
+    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+    //   Serial.print("Euler: ");
+    //   Serial.print(madData.roll); Serial.print(", ");
+    //   Serial.print(madData.pitch); Serial.print(", ");
+    //   Serial.println(madData.yaw);
 
-      // Serial.print("Altitude: "); Serial.println(altSmooth);
-      // Serial.print(mx); Serial.print(", "); Serial.print(my); Serial.print(", "); Serial.println(mz);
-      xSemaphoreGive(serialMutex);
-    }
+    //   // Serial.print("Altitude: "); Serial.println(altSmooth);
+    //   // Serial.print(mx); Serial.print(", "); Serial.print(my); Serial.print(", "); Serial.println(mz);
+    //   xSemaphoreGive(serialMutex);
+    // }
 
     vTaskDelayUntil(&lastWakeTime, intervalTicks); 
   }
@@ -743,25 +743,36 @@ void RXtask(void* Parameters){
   }
 }
 
-//// TODO: find ADC pin for this task (12 bit res: [12.6V: 2606, 11.4V: 2358])
+//// TODO: find ADC pin for this task (12 bit res: [12.6V: 2544, 11.4V: ?])
 void batteryMonitorTask(void* Parameters){
-  TickType_t interval = pdMS_TO_TICKS(200);
+  TickType_t interval = pdMS_TO_TICKS(20);
   TickType_t lastWakeTime = xTaskGetTickCount();
 
   float batteryVoltage; // Variable to hold battery voltage
 
+  int counter = 0;
+  float Vb = 0.0f;
+
   for (;;){
     // Read battery voltage
+    counter++;
     uint16_t adc_value = readVbat();
-    float batteryVoltage = (adc_value);  // 12-bit res
-    
-    // Update shared data
-    if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)) {
-      telemetry[5] = batteryVoltage; // Update battery voltage in telemetry
-      xSemaphoreGive(telemetryMutex);
-    }
+    Vb += (float)adc_value;
+    // float batteryVoltage = (adc_value);  // 12-bit res
 
-    // Serial.print("Batt: "); Serial.println(batteryVoltage);
+    if (counter == 10){
+      batteryVoltage = (Vb / 10.0f) * (12.6f / 2544.0f); // Convert ADC value to voltage (assuming 12.6V max and 12-bit ADC)
+
+      // Update shared data
+      if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)) {
+        telemetry[5] = batteryVoltage; // Update battery voltage in telemetry
+        xSemaphoreGive(telemetryMutex);
+      }
+
+      // Serial.print("/Batt: "); Serial.print(batteryVoltage); Serial.println(" V");
+      Vb = 0.0f; // reset the voltage
+      counter = 0; // reset the counter
+    }
     
     vTaskDelayUntil(&lastWakeTime, interval); // Delay until the next cycle
   }
@@ -825,19 +836,19 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
-  // result = xTaskCreate(
-  //   RXtask,
-  //   "nRF24 RX task",
-  //   256,
-  //   NULL,
-  //   PRIORITY_RADIO,
-  //   &radioTaskHandle
-  // );
-  // if (result != pdPASS) {
-  //   // Handle task creation failure
-  //   Serial.println("Failed to create RXtask");
-  //   while (1); // Infinite loop to indicate failure
-  // }
+  result = xTaskCreate(
+    RXtask,
+    "nRF24 RX task",
+    256,
+    NULL,
+    PRIORITY_RADIO,
+    &radioTaskHandle
+  );
+  if (result != pdPASS) {
+    // Handle task creation failure
+    Serial.println("Failed to create RXtask");
+    while (1); // Infinite loop to indicate failure
+  }
 
   result = xTaskCreate(
     batteryMonitorTask,
