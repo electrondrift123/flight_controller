@@ -390,7 +390,6 @@ void PIDtask(void* Parameters){
     // read user input from nRF24L01 (use mutex):
     if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE){
       // read user input here (radians for angles, rad/s for yaw rate)
-      // throttle = inputList[0]; // Throttle
       if (!KILL_MOTORS && !Emergency_Landing) {
         throttle = inputList[0];  // Only read when normal operation
       }
@@ -477,7 +476,7 @@ void PIDtask(void* Parameters){
       roll_rate_setpoint = computeLyGAPID_out(&pidRoll, rollInputFiltered, roll, dt_out); // deg/s
       pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, dt_out); // deg/s
 
-      // ===== IS LANDED LOGIC (disable I-term) =====
+      // ===== 'IS LANDED' LOGIC (disable I-term) =====
       float avg_motor_output = (motor_cmd[0] + motor_cmd[1] + motor_cmd[2] + motor_cmd[3]) / 4.0f;
       bool landed = (throttleFiltered < 200.0f) && (avg_motor_output < 1250.0f); 
 
@@ -613,10 +612,10 @@ void RXtask(void* Parameters){
   float Ycmd = 0.0f;
   float Pcmd = 0.0f;
   float Rcmd = 0.0f;
-  float killcmd = 0.0f;
+  float killcmd = 1.0f;
   float e_landing = 0.0f;
-  float sigma = 0.01f;
-  float gamma = 0.01f;
+  float sigma = 0.001f;
+  float gamma = 100.0f;
   int16_t rx_load[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
   int counter_print = 0;
@@ -664,10 +663,11 @@ void RXtask(void* Parameters){
           xSemaphoreGive(eulerAnglesMutex);
         }
         if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-          local_telemetry[3] = (int16_t) telemetry[0]; // altitude
+          local_telemetry[3] = (int16_t) telemetry[0]; // altitude 
 
           // temporary for analysis (PID gains in Roll):
-          local_telemetry[5] = (int16_t)(pidRoll.Kp * 100.0f);
+          // local_telemetry[5] = (int16_t)(pidRoll.Kp * 100.0f);
+          local_telemetry[5] = telemetry[5]; // battery voltage
           local_telemetry[6] = (int16_t)(pidRollRate.Kp * 100.0f);
           local_telemetry[7] = (int16_t)(pidRollRate.Ki * 100.0f);
           local_telemetry[8] = (int16_t)(pidRollRate.Kd * 100.0f);
@@ -701,7 +701,7 @@ void RXtask(void* Parameters){
         killcmd = (rx_load[4] == 0) ? 0.0f : 1.0f; // input: (1 = kill, 0 = not kill)
         // e_landing = (rx_load[5] == 0) ? 0.0f : 1.0f; // Emergency landing flag
         sigma = (float)rx_load[6] / 1000.0f; // 3 decimal precision
-        gamma = (float)rx_load[7] / 1000.0f;
+        gamma = (float)rx_load[7] * 100.0f;
 
         // convert attitude command from Deg to Rad
         Ycmd = Ycmd * DEG_TO_RAD;
@@ -716,7 +716,7 @@ void RXtask(void* Parameters){
         killcmd = constrainFloat(killcmd, 0.0f, 1.0f); // Kill command 
         e_landing = constrainFloat(e_landing, 0.0f, 1.0f); // Emergency landing flag
         sigma = constrainFloat(sigma, 0.001f, 1.0f);
-        gamma = constrainFloat(gamma, 0.001f, 1.0f);
+        gamma = constrainFloat(gamma, 0.001f, 500.0f);
 
         // 2. update the data in inputList with mutex
         if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {  
@@ -765,7 +765,7 @@ void batteryMonitorTask(void* Parameters){
 
       // Update shared data
       if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)) {
-        telemetry[5] = batteryVoltage; // Update battery voltage in telemetry
+        telemetry[5] = (int16_t)(batteryVoltage); // Update battery voltage in telemetry
         xSemaphoreGive(telemetryMutex);
       }
 
