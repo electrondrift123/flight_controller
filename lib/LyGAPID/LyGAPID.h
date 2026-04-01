@@ -6,14 +6,15 @@
 #define KP_OUT_MAX 10.0f
 #define KP_OUT_MIN 3.0f
 
-#define KP_MAX 160.0f
+// #define KP_MAX 160.0f
+#define KP_MAX 60.0f
 #define KP_MIN 40.0f
 
 #define KI_MAX 30.0f
 #define KI_MIN 0.0f
 
 #define KD_MAX 0.025f // 0.025 last
-#define KD_MIN 0.001f
+#define KD_MIN 0.008f
 
 typedef struct {
     float Kp, Ki, Kd;

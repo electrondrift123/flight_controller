@@ -29,21 +29,21 @@
 #define U_MAX_YAW_RATE      100.0f
 
 // Adaptive PID config: 
-#define GAMMA_B         500.0f
+#define GAMMA_B         1.0f
 #define SIGMA           0.001f
 #define B_SIGN          1.0f
 #define CONTROLLER_MODE 0.0f // 0 = adaptive, 1 = static
 
 // Initial P-PID Gains:
-#define P   3.0f
+#define P   4.0f
 
 #define KP  45.0f
 #define KI  10.0f
-#define KD  0.005f
+#define KD  0.008f
 
 // MAX commands in float:
 #define THROTTLE_MAX 1000.0f
-#define THROTTLE_MIN 0.0f
+#define THROTTLE_MIN 50.0f
 #define YAW_MAX             PI * 2.0f   // 360 deg/s max cmd
 #define PITCH_ROLL_MAX      PI / 6.0f   // 30 deg max cmd
 
@@ -80,6 +80,16 @@ extern LyGAPIDControllerData_t pidYawRate;
 // extern Butterworth2ndLPF_t pidLPF;  // Gyroscope LPF
 extern EMA_t axLPF, ayLPF, azLPF; // Accelerometer LPF
 extern EMA_t pidLPF; // EMA for PID output
+extern EMA_t dP;
+extern EMA_t dkp_;
+extern EMA_t dki_;
+extern EMA_t dkd_;
+
+// for inputs (joysticks)
+extern EMA_t T_LPF;
+extern EMA_t Y_LPF;
+extern EMA_t P_LPF;
+extern EMA_t R_LPF;
 
 // Failsafe for Radio 
 extern TimerHandle_t linkWatchdogTimer;

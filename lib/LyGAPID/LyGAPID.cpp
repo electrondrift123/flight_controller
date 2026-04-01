@@ -28,7 +28,11 @@ void initLyGAPID(LyGAPIDControllerData_t* lygapid, float Kp, float Ki, float Kd,
     lygapid->landed = 1.0f; // 1 = true, 0 = false
 
     // Butterworth2ndLPF_Init(&pidLPF, 80.0f, 500.0f);  // 35–50 Hz; lower than racing
-    emaInit(&pidLPF, 2.0f, 30.0f, 500.0f); // 35–50 Hz; lower than racing
+    emaInit(&pidLPF, 2.0f, 30.0f, 500.0f); // 20–40 Hz; recommended
+    emaInit(&dP, 1.0f, 5.0f, 500.0f);
+    emaInit(&dkp_, 1.0f, 5.0f, 500.0f);
+    emaInit(&dki_, 1.0f, 5.0f, 500.0f);
+    emaInit(&dkd_, 1.0f, 5.0f, 500.0f);
 }
 
 float computeLyGAPID_out(LyGAPIDControllerData_t* lygapid, float setpoint, float actual, float dt){
@@ -51,11 +55,16 @@ float computeLyGAPID_out(LyGAPIDControllerData_t* lygapid, float setpoint, float
         float gamma_p = 5.0f * lygapid->gamma_base;
 
         float dKp = gamma_p * lygapid->b_sign * error * error - lygapid->sigma * gamma_p * lygapid->Kp;
+        emaUpdate(&dP, dKp);
+        dKp = dP.output;
 
         lygapid->Kp += dKp * dt;
 
         if (lygapid->Kp > KP_OUT_MAX) lygapid->Kp = KP_OUT_MAX; // clamp
         else if (lygapid->Kp < KP_OUT_MIN) lygapid->Kp = KP_OUT_MIN;
+    }
+    else if (lygapid->mode == 1.0f){
+        lygapid->Kp = KP_OUT_MIN; // fixed high Kp for output control
     }
 
     return u;
@@ -114,6 +123,14 @@ float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float 
         float dKi = gamma_i * lygapid->b_sign * lygapid->integral * error - lygapid->sigma * gamma_i * lygapid->Ki;
         float dKd = gamma_d * lygapid->b_sign * derivative * error - lygapid->sigma * gamma_d * lygapid->Kd;
 
+        emaUpdate(&dkp_, dKp);
+        emaUpdate(&dki_, dKi);
+        emaUpdate(&dkd_, dKd);
+
+        dKp = dkp_.output;
+        dKi = dki_.output;
+        dKd = dkd_.output;
+
         lygapid->Kp += dKp * dt;
         lygapid->Ki += dKi * dt;
         lygapid->Kd += dKd * dt;
@@ -126,6 +143,11 @@ float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float 
 
         if (lygapid->Kd > KD_MAX) lygapid->Kd = KD_MAX; // clamp
         else if (lygapid->Kd < KD_MIN) lygapid->Kd = KD_MIN;
+    }
+    else if (lygapid->mode == 1.0f){
+        lygapid->Kp = KP_MIN; // fixed high Kp for output control
+        lygapid->Ki = KI_MAX / 2.0f; // fixed high Kp for output control
+        lygapid->Kd = 0.005f; // fixed high Kp for output control
     }
 
     return u;
@@ -169,8 +191,8 @@ float computeLyGAPID_yaw(LyGAPIDControllerData_t* lygapid, float setpoint, float
 
     if (lygapid->mode <= 0.0f){
         // Adaptation
-        float gamma_p = lygapid->gamma_base / (1.0f + lygapid->Kp);
-        float gamma_i = lygapid->gamma_base / (1.0f + lygapid->Ki);
+        float gamma_p = lygapid->gamma_base;
+        float gamma_i = lygapid->gamma_base;
 
         float dKp = gamma_p * lygapid->b_sign * error * error - lygapid->sigma * gamma_p * lygapid->Kp;
         float dKi = gamma_i * lygapid->b_sign * lygapid->integral * error - lygapid->sigma * gamma_i * lygapid->Ki;
@@ -183,6 +205,10 @@ float computeLyGAPID_yaw(LyGAPIDControllerData_t* lygapid, float setpoint, float
 
         if (lygapid->Ki > KI_MAX) lygapid->Ki = KI_MAX; // clamp
         else if (lygapid->Ki < 10.0f) lygapid->Ki = 10.0f;
+    }
+    else if (lygapid->mode == 1.0f){
+        lygapid->Kp = KP_MIN * 0.80f; // fixed low Kp for yaw control
+        lygapid->Ki = 10.0f; // fixed low Ki for yaw control
     }
 
     return u;

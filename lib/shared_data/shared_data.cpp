@@ -20,6 +20,16 @@ LyGAPIDControllerData_t pidYawRate;
 // Butterworth2ndLPF_t pidLPF;  // Gyroscope LPF (init inside LyGAPID)
 EMA_t axLPF, ayLPF, azLPF; // Accelerometer LPF
 EMA_t pidLPF; // EMA for PID output
+EMA_t dP;
+EMA_t dkp_;
+EMA_t dki_;
+EMA_t dkd_;
+
+// for inputs (joysticks)
+EMA_t T_LPF;
+EMA_t Y_LPF;
+EMA_t P_LPF;
+EMA_t R_LPF;
 
 // Failsafe for Radio
 // === Global / static variables ===

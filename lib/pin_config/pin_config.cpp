@@ -119,10 +119,10 @@ void MotorPWM_TIM2_Init(void) {
   TIM2->CR1 |= TIM_CR1_CEN;   // Enable counter
 
   // 1 ms min throttle : 2 ms max throttle
-  TIM2->CCR1 = 1000;
-  TIM2->CCR2 = 1000;
-  TIM2->CCR3 = 1000;
-  TIM2->CCR4 = 1000;
+  TIM2->CCR1 = 1020;
+  TIM2->CCR2 = 1020;
+  TIM2->CCR3 = 1020;
+  TIM2->CCR4 = 1020;
 }
 
 // void MotorPWM_TIM2_Init(void) {

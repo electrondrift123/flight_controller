@@ -291,7 +291,10 @@ void PIDtask(void* Parameters){
   static float pitchInputFiltered = 0.0f;
   static float yawInputFiltered = 0.0f;
 
-  const float alpha = 0.2f;  // adjust as needed
+  emaInit(&T_LPF, 1.0, 30.0f, 500.0f); // 30 Hz cutoff for throttle
+  emaInit(&Y_LPF, 1.0, 30.0f, 500.0f); // 30 Hz cutoff for yaw
+  emaInit(&P_LPF, 1.0, 30.0f, 500.0f); // 30 Hz cutoff for pitch
+  emaInit(&R_LPF, 1.0, 30.0f, 500.0f); // 30 Hz cutoff for roll
 
   // flags
   bool ALT_H = false; // Altitude Hold flag
@@ -318,7 +321,8 @@ void PIDtask(void* Parameters){
 
 
   // motors init state:
-  float motor_cmd[4] = {1000.0f, 1000.0f, 1000.0f, 1000.0f};
+  float T_min = 1050.0f;
+  float motor_cmd[4] = {T_min, T_min, T_min, T_min}; // Initialize all motors to minimum throttle
   float cmd_bias = 1000.0f;
 
   // // Hold min for arming
@@ -401,11 +405,11 @@ void PIDtask(void* Parameters){
       Emergency_Landing = (inputList[5] != 0.0f);
 
       // temporary for rod test (roll only):
-      pidRoll.sigma = inputList[6]; // read sigma from inputList[7]
-      pidRollRate.sigma = inputList[6]; // read sigma from inputList[7]
+      // pidRoll.sigma = inputList[6]; // read sigma from inputList[7]
+      // pidRollRate.sigma = inputList[6]; // read sigma from inputList[7]
 
-      pidRoll.gamma_base = inputList[7]; // read gamma_base from inputList[6]
-      pidRollRate.gamma_base = inputList[7]; // read gamma_base from inputList[6]
+      // pidRoll.gamma_base = inputList[7]; // read gamma_base from inputList[6]
+      // pidRollRate.gamma_base = inputList[7]; // read gamma_base from inputList[6]
       
       // ALT_H = (inputList[7] != 0.0f); 
       xSemaphoreGive(nRF24Mutex); // release the mutex
@@ -422,7 +426,7 @@ void PIDtask(void* Parameters){
 
       // throttle = 0.0f; // this alone can disable the motors
       throttle -= 0.05f; // then why this wont decrease the motors? (it does but it wont go to zero)
-      if (throttle < 0.0f) throttle = 0.0f; // Clamp to 0
+      if (throttle < 50.0f) throttle = 50.0f; // Clamp to 0
       rollInput = 0.0f;
       pitchInput = 0.0f;
       yawInput = 0.0f;
@@ -438,7 +442,7 @@ void PIDtask(void* Parameters){
       
       //// TODO: implement emergency landing logic 
       throttle -= 0.05f; // Decrease throttle gradually (-25 ticks/sec)
-      if (throttle < 0.0f) throttle = 0.0f; // Clamp to 0
+      if (throttle < 20.0f) throttle = 20.0f; // Clamp to 0
       // if (throttle < 350.0f) throttle = 350.0f; // Minimum throttle for landing
     }
 
@@ -456,13 +460,20 @@ void PIDtask(void* Parameters){
     }else{
       // to remove the CONFLICT between EMA & PID
       altitudeLockSet = false;
-      throttleFiltered = alpha * throttle  + (1 - alpha) * throttleFiltered;
+      emaUpdate(&T_LPF, throttle); // EMA filter for throttle
+      throttleFiltered = T_LPF.output; // Get filtered throttle
     }
 
     // Apply EMA filter:
-    rollInputFiltered  = alpha * rollInput  + (1 - alpha) * rollInputFiltered;
-    pitchInputFiltered = alpha * pitchInput + (1 - alpha) * pitchInputFiltered;
-    yawInputFiltered   = alpha * yawInput   + (1 - alpha) * yawInputFiltered;
+    emaUpdate(&R_LPF, rollInput);  // EMA filter for roll input
+    emaUpdate(&P_LPF, pitchInput); // EMA filter for pitch input
+    emaUpdate(&Y_LPF, yawInput);   // EMA filter for yaw input
+    emaUpdate(&T_LPF, throttle);   // EMA filter for throttle input
+
+    rollInputFiltered  = R_LPF.output; // Get filtered roll input
+    pitchInputFiltered = P_LPF.output; // Get filtered pitch input
+    yawInputFiltered   = Y_LPF.output; // Get filtered yaw input
+    throttleFiltered   = T_LPF.output; // Get filtered throttle input
 
     // clamp
     rollInputFiltered = constrainFloat(rollInputFiltered, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
@@ -534,7 +545,7 @@ void PIDtask(void* Parameters){
       resetLyGAPID(&pidYawRate);
 
       for (int i = 0; i < 4; i++) {
-        motor_cmd[i] = 1000.0f;
+        motor_cmd[i] = T_min; // Set to minimum throttle for arming
       }
     } else {
       // Dynamic mixer:
@@ -557,7 +568,7 @@ void PIDtask(void* Parameters){
 
       // Hard Clamp
       for (int i = 0; i < 4; i++) {
-        motor_cmd[i] = constrainFloat(motor_cmd[i], 1000.0f, 2000.0f);
+        motor_cmd[i] = constrainFloat(motor_cmd[i], 1050.0f, 2000.0f);
       }
     }
 
@@ -699,9 +710,9 @@ void RXtask(void* Parameters){
         Pcmd = (float)rx_load[2] / 100.0f;
         Rcmd = (float)rx_load[3] / 100.0f;
         killcmd = (rx_load[4] == 0) ? 0.0f : 1.0f; // input: (1 = kill, 0 = not kill)
-        // e_landing = (rx_load[5] == 0) ? 0.0f : 1.0f; // Emergency landing flag
+        e_landing = (rx_load[5] == 0) ? 0.0f : 1.0f; // Emergency landing flag
         sigma = (float)rx_load[6] / 1000.0f; // 3 decimal precision
-        gamma = (float)rx_load[7] * 100.0f;
+        gamma = (float)rx_load[7];
 
         // convert attitude command from Deg to Rad
         Ycmd = Ycmd * DEG_TO_RAD;
@@ -870,4 +881,6 @@ void freeRTOS_tasks_init(void){
 // Priority tasks are all set to 1 (working) - i will try to change for the better: status: trying...
 
 //// TODO: 
-// - arming problem
+// - test rod 
+// - real test flight 
+// - test flight with payload (varying/sloshing)
