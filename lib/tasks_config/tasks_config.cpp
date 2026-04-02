@@ -331,7 +331,7 @@ void PIDtask(void* Parameters){
   // TIM2->CCR3 = (uint16_t)motor_cmd[2];
   // TIM2->CCR4 = (uint16_t)motor_cmd[3];
 
-  vTaskDelay(pdMS_TO_TICKS(3000)); // delay for arming motor
+  vTaskDelay(pdMS_TO_TICKS(1000)); // delay for arming motor
 
   for (;;){
     outer_loop_counter++;
@@ -442,7 +442,7 @@ void PIDtask(void* Parameters){
       
       //// TODO: implement emergency landing logic 
       throttle -= 0.05f; // Decrease throttle gradually (-25 ticks/sec)
-      if (throttle < 20.0f) throttle = 20.0f; // Clamp to 0
+      if (throttle < 50.0f) throttle = 50.0f; // Clamp to 0
       // if (throttle < 350.0f) throttle = 350.0f; // Minimum throttle for landing
     }
 

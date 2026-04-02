@@ -52,78 +52,129 @@ uint16_t readVbat(void) {
 }
 
 void MotorPWM_TIM2_Init(void) {
-  // Enable Clocks 
-  RCC->AHB1ENR |= (1 << 0);     // Enable GPIOA clock
-  RCC->APB1ENR |= (1 << 0);     // Enable TIM2 clock
+    // Enable clocks
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+    RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
 
-  // Reset TIM2 registers for clean configuration
-  TIM2->CR1 = 0;
-  TIM2->CR2 = 0;
-  TIM2->SMCR = 0;
-  TIM2->DIER = 0;
-  TIM2->SR = 0;
-  TIM2->EGR = 0;
-  TIM2->CCMR1 = 0;
-  TIM2->CCMR2 = 0;
-  TIM2->CCER = 0;
-  TIM2->CNT = 0;
-  TIM2->PSC = 0;
-  TIM2->ARR = 0;
+    // Reset timer
+    TIM2->CR1 = 0;
+    TIM2->CR2 = 0;
+    TIM2->SMCR = 0;
+    TIM2->DIER = 0;
+    TIM2->SR = 0;
+    TIM2->EGR = 0;
+    TIM2->CCMR1 = 0;
+    TIM2->CCMR2 = 0;
+    TIM2->CCER = 0;
+    TIM2->CNT = 0;
+    TIM2->PSC = 0;
+    TIM2->ARR = 0;
 
-  // Set MODER[0–3] = 10 (AF)
-  GPIOA->MODER &= ~((3 << (0 * 2)) | (3 << (1 * 2)) | (3 << (2 * 2)) | (3 << (3 * 2)));
-  GPIOA->MODER |=  ((2 << (0 * 2)) | (2 << (1 * 2)) | (2 << (2 * 2)) | (2 << (3 * 2)));
+    // GPIO: PA0-PA3 as AF, high speed
+    GPIOA->MODER &= ~0x000000FF;
+    GPIOA->MODER |=  0x000000AA;           // 10 = AF for each pin
+    GPIOA->OSPEEDR |= 0x000000FF;          // High speed (recommended)
+    GPIOA->AFR[0]  &= ~0x0000FFFF;
+    GPIOA->AFR[0]  |=  0x00001111;         // AF1 for TIM2 on PA0-PA3
 
-  // Set AFRL[0–3] = AF1 (TIM2)
-  GPIOA->AFR[0] &= ~((0xF << (0 * 4)) | (0xF << (1 * 4)) | (0xF << (2 * 4)) | (0xF << (3 * 4)));
-  GPIOA->AFR[0] |=  ((1 << (0 * 4)) | (1 << (1 * 4)) | (1 << (2 * 4)) | (1 << (3 * 4)));
+    // Timer base for 50 Hz (assuming 84 MHz APB1 → 1 MHz after prescaler)
+    TIM2->PSC = 83;      // 84 MHz / 84 = 1 MHz
+    TIM2->ARR = 19999;   // 1 MHz / 20000 = 50 Hz
 
-  // Configure TIM2 for PWM
-  TIM2->PSC = 83;          // Prescaler: 84MHz / (83 + 1) = 1 MHz
-  TIM2->ARR = 19999;       // ARR: 1 MHz / 50 Hz = 20000 → 20ms period
+    // === PWM Mode 1 on all 4 channels (active high) ===
+    // CH1 & CH2
+    TIM2->CCMR1 |= (6 << 4)  | (6 << 12);     // PWM Mode 1
+    TIM2->CCMR1 |= TIM_CCMR1_OC1PE | TIM_CCMR1_OC2PE;
 
-  /*** Configure PWM Mode on All 4 Channels ***/
-  // CH1 (PA0) - TIM2_CH1
-  TIM2->CCMR1 &= ~(0xFF << 0);  // Clear CCMR1 bits for CH1 and CH2
-  TIM2->CCMR1 |= (6 << 4);       // PWM Mode 1 for CH1
-  TIM2->CCMR1 |= TIM_CCMR1_OC1PE;  // Enable preload for CH1
-  TIM2->CCER &= ~TIM_CCER_CC1NP;   // Clear polarity (active high)
-  TIM2->CCER &= ~TIM_CCER_CC1E;    // Disable CH1 first
-  TIM2->CCER |= TIM_CCER_CC1E;     // Enable CH1 output
+    // CH3 & CH4
+    TIM2->CCMR2 |= (6 << 4)  | (6 << 12);
+    TIM2->CCMR2 |= TIM_CCMR2_OC3PE | TIM_CCMR2_OC4PE;
 
-  // CH2 (PA1) - TIM2_CH2
-  TIM2->CCMR1 |= (6 << 12);       // PWM Mode 1 for CH2
-  TIM2->CCMR1 |= TIM_CCMR1_OC2PE; // Enable preload for CH2
-  TIM2->CCER &= ~TIM_CCER_CC2NP;   // Clear polarity (active high)
-  TIM2->CCER &= ~TIM_CCER_CC2E;    // Disable CH2 first
-  TIM2->CCER |= TIM_CCER_CC2E;     // Enable CH2 output
+    // Enable outputs + active high polarity
+    TIM2->CCER &= ~(TIM_CCER_CC1P | TIM_CCER_CC2P | 
+                    TIM_CCER_CC3P | TIM_CCER_CC4P);   // Active high
+    TIM2->CCER |=  (TIM_CCER_CC1E | TIM_CCER_CC2E | 
+                    TIM_CCER_CC3E | TIM_CCER_CC4E);
 
-  // CH3 (PA2) - TIM2_CH3
-  TIM2->CCMR2 &= ~(0xFF << 0);  // Clear CCMR2 bits for CH3
-  TIM2->CCMR2 |= (6 << 4);       // PWM Mode 1 for CH3
-  TIM2->CCMR2 |= TIM_CCMR2_OC3PE; // Enable preload for CH3
-  TIM2->CCER &= ~TIM_CCER_CC3NP;   // Clear polarity (active high)
-  TIM2->CCER &= ~TIM_CCER_CC3E;    // Disable CH3 first
-  TIM2->CCER |= TIM_CCER_CC3E;     // Enable CH3 output
+    // Auto-reload preload + enable timer
+    TIM2->CR1 |= TIM_CR1_ARPE;
+    TIM2->EGR = TIM_EGR_UG;          // Force update
+    TIM2->CR1 |= TIM_CR1_CEN;
 
-  // CH4 (PA3) - TIM2_CH4
-  TIM2->CCMR2 |= (6 << 12);       // PWM Mode 1 for CH4
-  TIM2->CCMR2 |= TIM_CCMR2_OC4PE; // Enable preload for CH4
-  TIM2->CCER &= ~TIM_CCER_CC4NP;   // Clear polarity (active high)
-  TIM2->CCER &= ~TIM_CCER_CC4E;    // Disable CH4 first
-  TIM2->CCER |= TIM_CCER_CC4E;     // Enable CH4 output
-
-  // Enable timer with auto-reload preload
-  TIM2->CR1 = TIM_CR1_ARPE;   // Auto-reload preload enable
-  TIM2->EGR = TIM_EGR_UG;     // Update generation (load all registers)
-  TIM2->CR1 |= TIM_CR1_CEN;   // Enable counter
-
-  // 1 ms min throttle : 2 ms max throttle
-  TIM2->CCR1 = 1020;
-  TIM2->CCR2 = 1020;
-  TIM2->CCR3 = 1020;
-  TIM2->CCR4 = 1020;
+    // Safe initial value: 1 ms pulse (1000 µs)
+    TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 1020;
 }
+
+// void MotorPWM_TIM2_Init(void) {
+//   // Enable Clocks 
+//   RCC->AHB1ENR |= (1 << 0);     // Enable GPIOA clock
+//   RCC->APB1ENR |= (1 << 0);     // Enable TIM2 clock
+
+//   // Reset TIM2 registers for clean configuration
+//   TIM2->CR1 = 0;
+//   TIM2->CR2 = 0;
+//   TIM2->SMCR = 0;
+//   TIM2->DIER = 0;
+//   TIM2->SR = 0;
+//   TIM2->EGR = 0;
+//   TIM2->CCMR1 = 0;
+//   TIM2->CCMR2 = 0;
+//   TIM2->CCER = 0;
+//   TIM2->CNT = 0;
+//   TIM2->PSC = 0;
+//   TIM2->ARR = 0;
+
+//   // Set MODER[0–3] = 10 (AF)
+//   GPIOA->MODER &= ~((3 << (0 * 2)) | (3 << (1 * 2)) | (3 << (2 * 2)) | (3 << (3 * 2)));
+//   GPIOA->MODER |=  ((2 << (0 * 2)) | (2 << (1 * 2)) | (2 << (2 * 2)) | (2 << (3 * 2)));
+
+//   // Set AFRL[0–3] = AF1 (TIM2)
+//   GPIOA->AFR[0] &= ~((0xF << (0 * 4)) | (0xF << (1 * 4)) | (0xF << (2 * 4)) | (0xF << (3 * 4)));
+//   GPIOA->AFR[0] |=  ((1 << (0 * 4)) | (1 << (1 * 4)) | (1 << (2 * 4)) | (1 << (3 * 4)));
+
+//   // Configure TIM2 for PWM
+//   TIM2->PSC = 83;          // Prescaler: 84MHz / (83 + 1) = 1 MHz
+//   TIM2->ARR = 19999;       // ARR: 1 MHz / 50 Hz = 20000 → 20ms period
+
+//   /*** Configure PWM Mode on All 4 Channels ***/
+//   // CH1 (PA0) - TIM2_CH1
+//   TIM2->CCMR1 &= ~(0xFF << 0);  // Clear CCMR1 bits for CH1 and CH2
+//   TIM2->CCMR1 |= (6 << 4);       // PWM Mode 1 for CH1
+//   TIM2->CCMR1 |= TIM_CCMR1_OC1PE;  // Enable preload for CH1
+//   TIM2->CCER &= ~TIM_CCER_CC1NP;   // Clear polarity (active high)
+//   TIM2->CCER &= ~TIM_CCER_CC1E;    // Disable CH1 first
+//   TIM2->CCER |= TIM_CCER_CC1E;     // Enable CH1 output
+
+//   // CH2 (PA1) - TIM2_CH2
+//   TIM2->CCMR1 |= (6 << 12);       // PWM Mode 1 for CH2
+//   TIM2->CCMR1 |= TIM_CCMR1_OC2PE; // Enable preload for CH2
+//   TIM2->CCER &= ~TIM_CCER_CC2NP;   // Clear polarity (active high)
+//   TIM2->CCER &= ~TIM_CCER_CC2E;    // Disable CH2 first
+//   TIM2->CCER |= TIM_CCER_CC2E;     // Enable CH2 output
+
+//   // CH3 (PA2) - TIM2_CH3
+//   TIM2->CCMR2 &= ~(0xFF << 0);  // Clear CCMR2 bits for CH3
+//   TIM2->CCMR2 |= (6 << 4);       // PWM Mode 1 for CH3
+//   TIM2->CCMR2 |= TIM_CCMR2_OC3PE; // Enable preload for CH3
+//   TIM2->CCER &= ~TIM_CCER_CC3NP;   // Clear polarity (active high)
+//   TIM2->CCER &= ~TIM_CCER_CC3E;    // Disable CH3 first
+//   TIM2->CCER |= TIM_CCER_CC3E;     // Enable CH3 output
+
+//   // CH4 (PA3) - TIM2_CH4
+//   TIM2->CCMR2 |= (6 << 12);       // PWM Mode 1 for CH4
+//   TIM2->CCMR2 |= TIM_CCMR2_OC4PE; // Enable preload for CH4
+//   TIM2->CCER &= ~TIM_CCER_CC4NP;   // Clear polarity (active high)
+//   TIM2->CCER &= ~TIM_CCER_CC4E;    // Disable CH4 first
+//   TIM2->CCER |= TIM_CCER_CC4E;     // Enable CH4 output
+
+//   // Enable timer with auto-reload preload
+//   TIM2->CR1 = TIM_CR1_ARPE;   // Auto-reload preload enable
+//   TIM2->EGR = TIM_EGR_UG;     // Update generation (load all registers)
+//   TIM2->CR1 |= TIM_CR1_CEN;   // Enable counter
+
+//   // 1 ms min throttle : 2 ms max throttle
+//   TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 1000;
+// }
 
 // void MotorPWM_TIM2_Init(void) {
 //   // Enable Clocks 
