@@ -279,7 +279,7 @@ void PIDtask(void* Parameters){
 
   float altitude;
   float roll, pitch, yaw; // local variables for Euler Angles
-  float throttle, rollInput, pitchInput, yawInput; // user inputs
+  float throttle, rollInput, pitchInput, yawInput; // user inputs (throttle = velocity setpoint)
 
   float rollRate, pitchRate, yawRate; // from sensors
 
@@ -330,6 +330,10 @@ void PIDtask(void* Parameters){
   // TIM2->CCR2 = (uint16_t)motor_cmd[1];
   // TIM2->CCR3 = (uint16_t)motor_cmd[2];
   // TIM2->CCR4 = (uint16_t)motor_cmd[3];
+
+  float KP_z = 300.0f; // 300 unit per sec, 0.8m/s max cmd rate (TUNABLE)
+  float limit_z = 0.8f; // max of 400 units per 0.002 sec changes (TUNABLE)
+  initVelocityControlZ(&vc_z, KP_z, limit_z);
 
   vTaskDelay(pdMS_TO_TICKS(1000)); // delay for arming motor
 
@@ -526,8 +530,13 @@ void PIDtask(void* Parameters){
     float P_mix = constrainFloat(pitch_rate_correction, -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
     float Y_mix = constrainFloat(yaw_rate_correction, -U_MAX_YAW_RATE, U_MAX_YAW_RATE);
 
+    // height velocity control (z-axis): throttleFiltered is the velocity setpoint [-0.8m/s, 0.8m/s]
+    float h = altitude; // current altitude
+    float z_rate = computeVelocityControlZ(&vc_z, throttleFiltered, az, h, dt); // unit: throttle units per second
+    throttleFiltered += z_rate;
+
     // PID end.
-    throttleFiltered = constrainFloat(throttleFiltered, 0.0f, 1000.0f);
+    throttleFiltered = constrainFloat(throttleFiltered, 50.0f, 1000.0f);
     // Motor Mixer Algorithm (Props-out):
     motor_cmd[0] = cmd_bias + throttleFiltered + R_mix + P_mix - Y_mix; // Front Left
     motor_cmd[1] = cmd_bias + throttleFiltered - R_mix + P_mix + Y_mix; // Front Right
@@ -705,14 +714,14 @@ void RXtask(void* Parameters){
 
         // int16_t -> float data (scaled back by 1/100)
         // angle command expected in deg with 2 dec precision:
-        Tcmd = (float)rx_load[0]; // (expected: 0-1000 us tick)
+        Tcmd = (float)rx_load[0]; // (expected: {[-800,800] units: [-0.8, 0.8] m/s throttle command})
         Ycmd = (float)rx_load[1] / 100.0f;
         Pcmd = (float)rx_load[2] / 100.0f;
         Rcmd = (float)rx_load[3] / 100.0f;
         killcmd = (rx_load[4] == 0) ? 0.0f : 1.0f; // input: (1 = kill, 0 = not kill)
         e_landing = (rx_load[5] == 0) ? 0.0f : 1.0f; // Emergency landing flag
         sigma = (float)rx_load[6] / 1000.0f; // 3 decimal precision
-        gamma = (float)rx_load[7];
+        gamma = (float)rx_load[7] / 10.0f;
 
         // convert attitude command from Deg to Rad
         Ycmd = Ycmd * DEG_TO_RAD;
@@ -776,7 +785,7 @@ void batteryMonitorTask(void* Parameters){
 
       // Update shared data
       if (xSemaphoreTake(telemetryMutex, portMAX_DELAY)) {
-        telemetry[5] = (int16_t)(batteryVoltage); // Update battery voltage in telemetry
+        telemetry[5] = (int16_t)(100.0f * batteryVoltage); // Update battery voltage in telemetry (scaled by 100)
         xSemaphoreGive(telemetryMutex);
       }
 

@@ -1,4 +1,5 @@
 #include "shared_data.h"
+#include "velocity_control_z.h"
 
 // Allocate memory for global shared sensor data
 mpu6050Data_t mpuData;
@@ -24,6 +25,10 @@ EMA_t dP;
 EMA_t dkp_;
 EMA_t dki_;
 EMA_t dkd_;
+
+// altitude hold (z-axis velocity control)
+VelocityControlZData_t vc_z;
+EMA_t vz_h_LPF;  // velocity estimate from altitude derivative
 
 // for inputs (joysticks)
 EMA_t T_LPF;

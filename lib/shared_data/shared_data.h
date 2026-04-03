@@ -16,6 +16,8 @@
 #include "FreeRTOS.h"
 #include "timers.h"
 
+#include "velocity_control_z.h"
+
 // Constants
 #define PI 3.1415f
 
@@ -41,9 +43,9 @@
 #define KI  10.0f
 #define KD  0.008f
 
-// MAX commands in float:
-#define THROTTLE_MAX 1000.0f
-#define THROTTLE_MIN 50.0f
+// MAX commands in float: 
+#define THROTTLE_MAX 100.0f // throttle is now [-0.8, 0.8] m/s cmd velocty z 
+#define THROTTLE_MIN -100.0f
 #define YAW_MAX             PI * 2.0f   // 360 deg/s max cmd
 #define PITCH_ROLL_MAX      PI / 6.0f   // 30 deg max cmd
 
@@ -84,6 +86,10 @@ extern EMA_t dP;
 extern EMA_t dkp_;
 extern EMA_t dki_;
 extern EMA_t dkd_;
+
+// altitude hold (z-axis velocity control)
+extern VelocityControlZData_t vc_z;
+extern EMA_t vz_h_LPF;  // velocity estimate from altitude derivative
 
 // for inputs (joysticks)
 extern EMA_t T_LPF;
