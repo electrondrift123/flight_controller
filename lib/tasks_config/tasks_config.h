@@ -7,5 +7,4 @@
 
 void freeRTOS_tasks_init(void);
 
-
 #endif // TASKS_CONFIG_H
