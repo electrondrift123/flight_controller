@@ -18,6 +18,7 @@ void nrfInterruptHandler(void) {
   portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
+// original
 bool main_rx_init(void){
     // Setup radio
   SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
@@ -46,10 +47,10 @@ bool main_rx_init(void){
   radio.setCRCLength(RF24_CRC_16);      // Optional, but best to match TX
   radio.enableDynamicPayloads();        // Enable variable-length payloads
   radio.enableAckPayload();             // Allow ACK payloads
-  // radio.setRetries(3, 5);               // Optional, RX ignores but safe for consistency
+  // radio.setRetries(2, 15);               // Optional, RX ignores but safe for consistency
 
   // Only trigger interrupt on data ready (RX)
-  // radio.setStatusFlags(RF24_RX_DR);
+  radio.setStatusFlags(RF24_RX_DR);
 
   // Address pipe must match TX's writing pipe
   radio.openReadingPipe(PIPE_INDEX, address[0]);

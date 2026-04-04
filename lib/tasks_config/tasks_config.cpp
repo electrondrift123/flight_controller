@@ -621,22 +621,157 @@ void PIDtask(void* Parameters){
   }
 }
 
+// original
+// void RXtask(void* Parameters){
+//   // reply: roll, pitch, yaw, alt, rad status, 2{P, kp, ki, kd}, {Kp, Ki, Kd}
+//   // 32 bytes nRF24 max can handle, sent:  32 bytes, int16 = 2 bytes
+//   // int16_t local_telemetry[16] = {0, 0, 0, 0, 0, 0,0,0,0, 0,0,0,0, 0,0,0}; 
+//   int16_t local_telemetry[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0}; 
+//   int mode = 0;
+//   // float kp, ki, kd, kill;
+//   float Tcmd = 0.0f;
+//   float Ycmd = 0.0f;
+//   float Pcmd = 0.0f;
+//   float Rcmd = 0.0f;
+//   float killcmd = 1.0f;
+//   float e_landing = 0.0f;
+//   float sigma = 0.001f;
+//   float gamma = 100.0f;
+//   int16_t rx_load[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+//   int counter_print = 0;
+
+
+//   // init failsafe radio link
+//   initLinkWatchdog();
+
+//   // Start killed
+//   connection_ok = false;
+//   taskENTER_CRITICAL();
+//   inputList[0] = 0.0f;
+//   inputList[1] = 0.0f;
+//   inputList[2] = 0.0f;
+//   inputList[3] = 0.0f;
+//   inputList[4] = 1.0f;
+//   taskEXIT_CRITICAL();
+
+//   for (;;) {
+//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+//     // vTaskDelay(pdMS_TO_TICKS(4));
+
+//     // Read + clear status flags
+//     uint8_t flags = radio.clearStatusFlags();
+
+//     // Handle data ready
+//     if (flags & RF24_RX_DR) {
+//       while (radio.available()) {
+//         // We are alive!
+//         connection_ok = true;
+//         Serial.println("help");
+
+//         // Restart watchdog (this is the magic line)
+//         // Critical: Start or restart watchdog
+//         if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
+//           xTimerStart(linkWatchdogTimer, 0);
+//         } else {
+//           xTimerReset(linkWatchdogTimer, 0);
+//         }
+
+//         local_telemetry[4] = 1; // 1 = connected, 0 = disconnected
+
+//         if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//           local_telemetry[0] = (int16_t) eulerAngles[0];
+//           local_telemetry[1] = (int16_t) eulerAngles[1];
+//           local_telemetry[2] = (int16_t) eulerAngles[2];
+//           xSemaphoreGive(eulerAnglesMutex);
+//         }
+//         if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//           local_telemetry[3] = (int16_t) telemetry[0]; // altitude 
+
+//           // temporary for analysis (PID gains in Roll):
+//           // local_telemetry[5] = (int16_t)(pidRoll.Kp * 100.0f);
+//           local_telemetry[5] = telemetry[5]; // battery voltage
+//           local_telemetry[6] = (int16_t)(pidRollRate.Kp * 100.0f);
+//           local_telemetry[7] = (int16_t)(pidRollRate.Ki * 100.0f);
+//           local_telemetry[8] = (int16_t)(pidRollRate.Kd * 100.0f);
+
+//           xSemaphoreGive(telemetryMutex);
+//         }
+
+//         // Write ACK payload BEFORE read
+//         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
+        
+//         // Read incoming data
+//         radio.read(rx_load, sizeof(rx_load));
+        
+//         radio.startListening();
+
+//         // if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//         //   Serial.print("[nRF24 RX] Received: ");
+//         //   for (int i = 0; i < 4; i++) {
+//         //     Serial.print(rx_load[i]); Serial.print(", ");
+//         //   }
+//         //   Serial.println(rx_load[4]);
+//         //   xSemaphoreGive(serialMutex);
+//         // }
+
+//         // int16_t -> float data (scaled back by 1/100)
+//         // angle command expected in deg with 2 dec precision:
+//         Tcmd = (float)rx_load[0]; // (expected: {[-800,800] units: [-0.8, 0.8] m/s throttle command})
+//         Ycmd = (float)rx_load[1] / 100.0f;
+//         Pcmd = (float)rx_load[2] / 100.0f;
+//         Rcmd = (float)rx_load[3] / 100.0f;
+//         killcmd = (rx_load[4] == 0) ? 0.0f : 1.0f; // input: (1 = kill, 0 = not kill)
+//         e_landing = (rx_load[5] == 0) ? 0.0f : 1.0f; // Emergency landing flag
+//         sigma = (float)rx_load[6] / 1000.0f; // 3 decimal precision
+//         gamma = (float)rx_load[7] / 10.0f;
+
+//         // convert attitude command from Deg to Rad
+//         Ycmd = Ycmd * DEG_TO_RAD;
+//         Pcmd = Pcmd * DEG_TO_RAD;
+//         Rcmd = Rcmd * DEG_TO_RAD;
+
+//         // clamp it to the safe range 
+//         Tcmd = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX); // Throttle command
+//         Ycmd = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX); // Yaw command (max: -360 to 360 deg/s)
+//         Pcmd = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Pitch command (max: -30 to 30 deg)
+//         Rcmd = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Roll command (max: -30 to 30 deg)
+//         killcmd = constrainFloat(killcmd, 0.0f, 1.0f); // Kill command 
+//         e_landing = constrainFloat(e_landing, 0.0f, 1.0f); // Emergency landing flag
+//         sigma = constrainFloat(sigma, 0.001f, 1.0f);
+//         gamma = constrainFloat(gamma, 0.001f, 500.0f);
+
+//         // 2. update the data in inputList with mutex
+//         if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {  
+//           inputList[0] = Tcmd; // update throttle
+//           inputList[1] = Ycmd; // update yaw
+//           inputList[2] = Pcmd; // update pitch
+//           inputList[3] = Rcmd; // update roll
+//           inputList[4] = killcmd; // update kill flag in inputList
+//           inputList[5] = e_landing; // Emergency landing flag
+
+//           // temporary for analysis: roll only
+//           inputList[6] = sigma; 
+//           inputList[7] = gamma;
+//           xSemaphoreGive(nRF24Mutex);
+//         }
+
+//       }
+//     }
+
+//     // Optional: catch abnormal TX_ACK behavior
+//     if (flags & 0x10) {
+//       radio.flush_tx();  // clear stuck packet
+//     }
+//   }
+// }
+
+// dummy 1
 void RXtask(void* Parameters){
   // reply: roll, pitch, yaw, alt, rad status, 2{P, kp, ki, kd}, {Kp, Ki, Kd}
   // 32 bytes nRF24 max can handle, sent:  32 bytes, int16 = 2 bytes
-  // int16_t local_telemetry[16] = {0, 0, 0, 0, 0, 0,0,0,0, 0,0,0,0, 0,0,0}; 
-  int16_t local_telemetry[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0}; 
-  int mode = 0;
-  // float kp, ki, kd, kill;
-  float Tcmd = 0.0f;
-  float Ycmd = 0.0f;
-  float Pcmd = 0.0f;
-  float Rcmd = 0.0f;
-  float killcmd = 1.0f;
-  float e_landing = 0.0f;
-  float sigma = 0.001f;
-  float gamma = 100.0f;
-  int16_t rx_load[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  int16_t local_telemetry[5] = {20, 20, 20, 20, 10}; 
+  int16_t rx_load[5] = {20, 20, 20, 20, 30};
 
   int counter_print = 0;
 
@@ -646,13 +781,6 @@ void RXtask(void* Parameters){
 
   // Start killed
   connection_ok = false;
-  taskENTER_CRITICAL();
-  inputList[0] = 0.0f;
-  inputList[1] = 0.0f;
-  inputList[2] = 0.0f;
-  inputList[3] = 0.0f;
-  inputList[4] = 1.0f;
-  taskEXIT_CRITICAL();
 
   for (;;) {
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -665,6 +793,7 @@ void RXtask(void* Parameters){
       while (radio.available()) {
         // We are alive!
         connection_ok = true;
+        Serial.println("help");
 
         // Restart watchdog (this is the magic line)
         // Critical: Start or restart watchdog
@@ -674,27 +803,7 @@ void RXtask(void* Parameters){
           xTimerReset(linkWatchdogTimer, 0);
         }
 
-        local_telemetry[4] = 1; // 1 = connected, 0 = disconnected
-
-        if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-          local_telemetry[0] = (int16_t) eulerAngles[0];
-          local_telemetry[1] = (int16_t) eulerAngles[1];
-          local_telemetry[2] = (int16_t) eulerAngles[2];
-          xSemaphoreGive(eulerAnglesMutex);
-        }
-        if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-          local_telemetry[3] = (int16_t) telemetry[0]; // altitude 
-
-          // temporary for analysis (PID gains in Roll):
-          // local_telemetry[5] = (int16_t)(pidRoll.Kp * 100.0f);
-          local_telemetry[5] = telemetry[5]; // battery voltage
-          local_telemetry[6] = (int16_t)(pidRollRate.Kp * 100.0f);
-          local_telemetry[7] = (int16_t)(pidRollRate.Ki * 100.0f);
-          local_telemetry[8] = (int16_t)(pidRollRate.Kd * 100.0f);
-
-          xSemaphoreGive(telemetryMutex);
-        }
-
+       
         // Write ACK payload BEFORE read
         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
         
@@ -703,55 +812,29 @@ void RXtask(void* Parameters){
         
         radio.startListening();
 
-        // if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-        //   Serial.print("[nRF24 RX] Received: ");
-        //   for (int i = 0; i < 4; i++) {
-        //     Serial.print(rx_load[i]); Serial.print(", ");
-        //   }
-        //   Serial.println(rx_load[4]);
-        //   xSemaphoreGive(serialMutex);
-        // }
-
-        // int16_t -> float data (scaled back by 1/100)
-        // angle command expected in deg with 2 dec precision:
-        Tcmd = (float)rx_load[0]; // (expected: {[-800,800] units: [-0.8, 0.8] m/s throttle command})
-        Ycmd = (float)rx_load[1] / 100.0f;
-        Pcmd = (float)rx_load[2] / 100.0f;
-        Rcmd = (float)rx_load[3] / 100.0f;
-        killcmd = (rx_load[4] == 0) ? 0.0f : 1.0f; // input: (1 = kill, 0 = not kill)
-        e_landing = (rx_load[5] == 0) ? 0.0f : 1.0f; // Emergency landing flag
-        sigma = (float)rx_load[6] / 1000.0f; // 3 decimal precision
-        gamma = (float)rx_load[7] / 10.0f;
-
-        // convert attitude command from Deg to Rad
-        Ycmd = Ycmd * DEG_TO_RAD;
-        Pcmd = Pcmd * DEG_TO_RAD;
-        Rcmd = Rcmd * DEG_TO_RAD;
-
-        // clamp it to the safe range 
-        Tcmd = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX); // Throttle command
-        Ycmd = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX); // Yaw command (max: -360 to 360 deg/s)
-        Pcmd = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Pitch command (max: -30 to 30 deg)
-        Rcmd = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Roll command (max: -30 to 30 deg)
-        killcmd = constrainFloat(killcmd, 0.0f, 1.0f); // Kill command 
-        e_landing = constrainFloat(e_landing, 0.0f, 1.0f); // Emergency landing flag
-        sigma = constrainFloat(sigma, 0.001f, 1.0f);
-        gamma = constrainFloat(gamma, 0.001f, 500.0f);
-
-        // 2. update the data in inputList with mutex
-        if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {  
-          inputList[0] = Tcmd; // update throttle
-          inputList[1] = Ycmd; // update yaw
-          inputList[2] = Pcmd; // update pitch
-          inputList[3] = Rcmd; // update roll
-          inputList[4] = killcmd; // update kill flag in inputList
-          inputList[5] = e_landing; // Emergency landing flag
-
-          // temporary for analysis: roll only
-          inputList[6] = sigma; 
-          inputList[7] = gamma;
-          xSemaphoreGive(nRF24Mutex);
+        if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+          Serial.print("[nRF24 RX] Received: ");
+          for (int i = 0; i <= 3; i++) {
+            Serial.print(rx_load[i]); Serial.print(", ");
+          }
+          Serial.println(rx_load[4]);
+          xSemaphoreGive(serialMutex);
         }
+
+        // // 2. update the data in inputList with mutex
+        // if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {  
+        //   inputList[0] = Tcmd; // update throttle
+        //   inputList[1] = Ycmd; // update yaw
+        //   inputList[2] = Pcmd; // update pitch
+        //   inputList[3] = Rcmd; // update roll
+        //   inputList[4] = killcmd; // update kill flag in inputList
+        //   inputList[5] = e_landing; // Emergency landing flag
+
+        //   // temporary for analysis: roll only
+        //   inputList[6] = sigma; 
+        //   inputList[7] = gamma;
+        //   xSemaphoreGive(nRF24Mutex);
+        // }
 
       }
     }
@@ -762,6 +845,150 @@ void RXtask(void* Parameters){
     }
   }
 }
+
+// // dummy 2
+// void RXtask(void* Parameters){
+//   // reply: roll, pitch, yaw, alt, rad status, 2{P, kp, ki, kd}, {Kp, Ki, Kd}
+//   // 32 bytes nRF24 max can handle, sent:  32 bytes, int16 = 2 bytes
+//   // int16_t local_telemetry[16] = {0, 0, 0, 0, 0, 0,0,0,0, 0,0,0,0, 0,0,0}; 
+//   int16_t local_telemetry[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0}; 
+//   int mode = 0;
+//   // float kp, ki, kd, kill;
+//   float Tcmd = 0.0f;
+//   float Ycmd = 0.0f;
+//   float Pcmd = 0.0f;
+//   float Rcmd = 0.0f;
+//   float killcmd = 1.0f;
+//   float e_landing = 0.0f;
+//   float sigma = 0.001f;
+//   float gamma = 100.0f;
+//   int16_t rx_load[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+//   int counter_print = 0;
+
+
+//   // init failsafe radio link
+//   initLinkWatchdog();
+
+//   // Start killed
+//   connection_ok = false;
+//   taskENTER_CRITICAL();
+//   inputList[0] = 0.0f;
+//   inputList[1] = 0.0f;
+//   inputList[2] = 0.0f;
+//   inputList[3] = 0.0f;
+//   inputList[4] = 1.0f;
+//   taskEXIT_CRITICAL();
+
+//   for (;;) {
+//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+//     // Read + clear status flags
+//     uint8_t flags = radio.clearStatusFlags();
+
+//     // Handle data ready
+//     if (flags & RF24_RX_DR) {
+//       while (radio.available()) {
+//         // We are alive!
+//         connection_ok = true;
+//         Serial.println("help");
+
+//         // Restart watchdog (this is the magic line)
+//         // Critical: Start or restart watchdog
+//         if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
+//           xTimerStart(linkWatchdogTimer, 0);
+//         } else {
+//           xTimerReset(linkWatchdogTimer, 0);
+//         }
+
+//         local_telemetry[4] = 1; // 1 = connected, 0 = disconnected
+
+//         if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//           local_telemetry[0] = (int16_t) eulerAngles[0];
+//           local_telemetry[1] = (int16_t) eulerAngles[1];
+//           local_telemetry[2] = (int16_t) eulerAngles[2];
+//           xSemaphoreGive(eulerAnglesMutex);
+//         }
+//         if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//           local_telemetry[3] = (int16_t) telemetry[0]; // altitude 
+
+//           // temporary for analysis (PID gains in Roll):
+//           // local_telemetry[5] = (int16_t)(pidRoll.Kp * 100.0f);
+//           local_telemetry[5] = telemetry[5]; // battery voltage
+//           local_telemetry[6] = (int16_t)(pidRollRate.Kp * 100.0f);
+//           local_telemetry[7] = (int16_t)(pidRollRate.Ki * 100.0f);
+//           local_telemetry[8] = (int16_t)(pidRollRate.Kd * 100.0f);
+
+//           xSemaphoreGive(telemetryMutex);
+//         }
+
+//         // Write ACK payload BEFORE read
+//         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
+        
+//         // Read incoming data
+//         radio.read(rx_load, sizeof(rx_load));
+        
+//         radio.startListening();
+
+//         if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//           Serial.print("[nRF24 RX] Received: ");
+//           for (int i = 0; i < 4; i++) {
+//             Serial.print(rx_load[i]); Serial.print(", ");
+//           }
+//           Serial.println(rx_load[4]);
+//           xSemaphoreGive(serialMutex);
+//         }
+
+//         // int16_t -> float data (scaled back by 1/100)
+//         // angle command expected in deg with 2 dec precision:
+//         Tcmd = (float)rx_load[0]; // (expected: {[-800,800] units: [-0.8, 0.8] m/s throttle command})
+//         Ycmd = (float)rx_load[1] / 100.0f;
+//         Pcmd = (float)rx_load[2] / 100.0f;
+//         Rcmd = (float)rx_load[3] / 100.0f;
+//         killcmd = (rx_load[4] == 0) ? 0.0f : 1.0f; // input: (1 = kill, 0 = not kill)
+//         e_landing = (rx_load[5] == 0) ? 0.0f : 1.0f; // Emergency landing flag
+//         sigma = (float)rx_load[6] / 1000.0f; // 3 decimal precision
+//         gamma = (float)rx_load[7] / 10.0f;
+
+//         // convert attitude command from Deg to Rad
+//         Ycmd = Ycmd * DEG_TO_RAD;
+//         Pcmd = Pcmd * DEG_TO_RAD;
+//         Rcmd = Rcmd * DEG_TO_RAD;
+
+//         // clamp it to the safe range 
+//         Tcmd = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX); // Throttle command
+//         Ycmd = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX); // Yaw command (max: -360 to 360 deg/s)
+//         Pcmd = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Pitch command (max: -30 to 30 deg)
+//         Rcmd = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX); // Roll command (max: -30 to 30 deg)
+//         killcmd = constrainFloat(killcmd, 0.0f, 1.0f); // Kill command 
+//         e_landing = constrainFloat(e_landing, 0.0f, 1.0f); // Emergency landing flag
+//         sigma = constrainFloat(sigma, 0.001f, 1.0f);
+//         gamma = constrainFloat(gamma, 0.001f, 500.0f);
+
+//         // 2. update the data in inputList with mutex
+//         if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {  
+//           inputList[0] = Tcmd; // update throttle
+//           inputList[1] = Ycmd; // update yaw
+//           inputList[2] = Pcmd; // update pitch
+//           inputList[3] = Rcmd; // update roll
+//           inputList[4] = killcmd; // update kill flag in inputList
+//           inputList[5] = e_landing; // Emergency landing flag
+
+//           // temporary for analysis: roll only
+//           inputList[6] = sigma; 
+//           inputList[7] = gamma;
+//           xSemaphoreGive(nRF24Mutex);
+//         }
+
+//       }
+//     }
+
+//     // Optional: catch abnormal TX_ACK behavior
+//     if (flags & 0x10) {
+//       radio.flush_tx();  // clear stuck packet
+//     }
+//   }
+// }
 
 //// TODO: find ADC pin for this task (12 bit res: [12.6V: 2544, 11.4V: ?])
 void batteryMonitorTask(void* Parameters){
