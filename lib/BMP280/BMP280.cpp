@@ -163,10 +163,3 @@ bool BMP280_read(bmp280Data_t *data) {
 
   return true;
 }
-
-
-
-
-
-
-

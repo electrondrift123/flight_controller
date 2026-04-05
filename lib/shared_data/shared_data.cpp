@@ -28,7 +28,12 @@ EMA_t dkd_;
 
 // altitude hold (z-axis velocity control)
 VelocityControlZData_t vc_z;
-EMA_t vz_h_LPF;  // velocity estimate from altitude derivative
+EMA_t alt_sp_LPF;  
+EMA_t alt_LPF;
+EMA_t raw_alt_LPF;
+
+// kalman filter state for altitude estimation
+KalmanState_t kalmanState;
 
 // for inputs (joysticks)
 EMA_t T_LPF;

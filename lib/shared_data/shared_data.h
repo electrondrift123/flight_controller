@@ -17,6 +17,7 @@
 #include "timers.h"
 
 #include "velocity_control_z.h"
+#include "kalmanAltitude.h"
 
 // Constants
 #define PI 3.1415f
@@ -89,7 +90,12 @@ extern EMA_t dkd_;
 
 // altitude hold (z-axis velocity control)
 extern VelocityControlZData_t vc_z;
-extern EMA_t vz_h_LPF;  // velocity estimate from altitude derivative
+extern EMA_t alt_sp_LPF;  
+extern EMA_t alt_LPF;
+extern EMA_t raw_alt_LPF;
+
+// kalman filter state for altitude estimation
+extern KalmanState_t kalmanState;
 
 // for inputs (joysticks)
 extern EMA_t T_LPF;
@@ -107,7 +113,6 @@ extern volatile float eulerAngles[3];
 
 extern volatile float inputList[8]; // [T, Y, P, R, KILL, E-land, sigma, learning rate] // to receive
 extern volatile float telemetry[5]; //now: [alt, P, kp, ki, kd] //[Lat, lon, alt, heading, distance, batt]
-// temporary telemtry: [roll, pitch, yaw or heading, alt, radio_state] 
 
 // from sensor reading task
 extern volatile float MadgwickSensorList[9];

@@ -68,6 +68,8 @@ void nrfInterruptHandler(void) {
 //     return true;
 //   }
 // }
+
+
 bool main_rx_init(void){
     // Setup radio
   SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
@@ -98,6 +100,11 @@ bool main_rx_init(void){
   radio.setStatusFlags(RF24_RX_DR);
   // Address pipe must match TX's writing pipe
   radio.openReadingPipe(PIPE_INDEX, address[0]);
+
+  // Pre-load the ACK BEFORE startListening
+  int16_t startup_telemetry[5] = {0, 0, 0, 0, 0};
+  radio.writeAckPayload(PIPE_INDEX, startup_telemetry, sizeof(startup_telemetry));
+
   radio.startListening();
   // IRQ pin
   pinMode(NRF_IRQ_PIN, INPUT);
@@ -110,3 +117,4 @@ bool main_rx_init(void){
     return true;
   }
 }
+
