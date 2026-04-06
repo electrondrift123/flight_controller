@@ -89,7 +89,8 @@ extern EMA_t dki_;
 extern EMA_t dkd_;
 
 // altitude hold (z-axis velocity control)
-extern VelocityControlZData_t vc_z;
+extern VelocityControlZData_t vc_z; // outer PI controller for altitude hold
+extern VelocityControlZData_t vz_in; // inner PI controller for altitude hold
 extern EMA_t alt_sp_LPF;  
 extern EMA_t alt_LPF;
 extern EMA_t raw_alt_LPF;
@@ -112,7 +113,7 @@ extern volatile bool connection_ok;
 extern volatile float eulerAngles[3];
 
 extern volatile float inputList[8]; // [T, Y, P, R, KILL, E-land, sigma, learning rate] // to receive
-extern volatile float telemetry[5]; //now: [alt, P, kp, ki, kd] //[Lat, lon, alt, heading, distance, batt]
+extern volatile float telemetry[5]; //now: [alt, Vz, _, _, Vb] 
 
 // from sensor reading task
 extern volatile float MadgwickSensorList[9];

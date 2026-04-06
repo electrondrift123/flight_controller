@@ -28,6 +28,7 @@ EMA_t dkd_;
 
 // altitude hold (z-axis velocity control)
 VelocityControlZData_t vc_z;
+VelocityControlZData_t vz_in;
 EMA_t alt_sp_LPF;  
 EMA_t alt_LPF;
 EMA_t raw_alt_LPF;

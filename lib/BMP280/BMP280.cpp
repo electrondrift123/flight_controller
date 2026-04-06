@@ -2,164 +2,199 @@
 #include <math.h>
 #include "BMP280.h"
 
-float baseAltitude = 0;
+// Calibration data
+static uint16_t dig_T1, dig_P1;
+static int16_t dig_T2, dig_T3, dig_P2, dig_P3, dig_P4, dig_P5;
+static int16_t dig_P6, dig_P7, dig_P8, dig_P9;
 
-uint16_t dig_T1;
-int16_t dig_T2, dig_T3;
-uint16_t dig_P1;
-int16_t dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
+// Altitude reference (startup average)
+static float altitudeReference = 0;
 
-int32_t t_fine;
+// Raw altitude from last reading
+static float rawAltitude = 0;
 
-// smoothens the altitude reading: X = (1 - alpha) * X + alpha * X_prev, (LPF: EMA)
-float alpha = 0.8f;
-float smoothedAltitude = 0.0f;
-
-void updateAltitude(float rawAltitude) {
-  smoothedAltitude = (1 - alpha) * rawAltitude + alpha * smoothedAltitude;
+// Read calibration data from sensor
+static bool readCalibrationData(void) {
+    uint8_t data[24];
+    uint8_t i = 0;
+    
+    Wire.beginTransmission(BMP280_ADDRESS);
+    Wire.write(0x88);
+    if (Wire.endTransmission() != 0) return false;
+    
+    Wire.requestFrom(BMP280_ADDRESS, 24);
+    while (Wire.available() && i < 24) {
+        data[i] = Wire.read();
+        i++;
+    }
+    
+    if (i != 24) return false;
+    
+    dig_T1 = (data[1] << 8) | data[0];
+    dig_T2 = (data[3] << 8) | data[2];
+    dig_T3 = (data[5] << 8) | data[4];
+    dig_P1 = (data[7] << 8) | data[6];
+    dig_P2 = (data[9] << 8) | data[8];
+    dig_P3 = (data[11] << 8) | data[10];
+    dig_P4 = (data[13] << 8) | data[12];
+    dig_P5 = (data[15] << 8) | data[14];
+    dig_P6 = (data[17] << 8) | data[16];
+    dig_P7 = (data[19] << 8) | data[18];
+    dig_P8 = (data[21] << 8) | data[20];
+    dig_P9 = (data[23] << 8) | data[22];
+    
+    return true;
 }
 
-bool i2c_available(uint8_t reg, uint8_t len) {
-  Wire.beginTransmission(BMP280_ADDRESS);
-  Wire.write(reg);
-  if (Wire.endTransmission(false) != 0) return false;
-  if (Wire.requestFrom(BMP280_ADDRESS, len) != len) return false;
-  return true;
+// Read raw pressure and temperature from sensor
+static bool readRawData(uint32_t *adc_P, uint32_t *adc_T) {
+    Wire.beginTransmission(BMP280_ADDRESS);
+    Wire.write(0xF7);
+    if (Wire.endTransmission() != 0) return false;
+    
+    Wire.requestFrom(BMP280_ADDRESS, 6);
+    if (Wire.available() < 6) return false;
+    
+    uint32_t press_msb = Wire.read();
+    uint32_t press_lsb = Wire.read();
+    uint32_t press_xlsb = Wire.read();
+    uint32_t temp_msb = Wire.read();
+    uint32_t temp_lsb = Wire.read();
+    uint32_t temp_xlsb = Wire.read();
+    
+    *adc_P = (press_msb << 12) | (press_lsb << 4) | (press_xlsb >> 4);
+    *adc_T = (temp_msb << 12) | (temp_lsb << 4) | (temp_xlsb >> 4);
+    
+    return true;
 }
 
-void write8(uint8_t reg, uint8_t val) {
-  Wire.beginTransmission(BMP280_ADDRESS);
-  Wire.write(reg);
-  Wire.write(val);
-  Wire.endTransmission();
+// Calculate compensated pressure and temperature
+static bool calculatePressureTemp(uint32_t adc_P, uint32_t adc_T, float *pressure, float *temperature) {
+    signed long int var1, var2;
+    signed long int t_fine;
+    
+    // Calculate temperature
+    var1 = ((((adc_T >> 3) - ((signed long int)dig_T1 << 1))) * ((signed long int)dig_T2)) >> 11;
+    var2 = (((((adc_T >> 4) - ((signed long int)dig_T1)) * ((adc_T >> 4) - ((signed long int)dig_T1))) >> 12) * ((signed long int)dig_T3)) >> 14;
+    t_fine = var1 + var2;
+    *temperature = (t_fine * 5 + 128) >> 8;
+    *temperature = *temperature / 100.0;
+    
+    // Calculate pressure
+    unsigned long int p;
+    var1 = (((signed long int)t_fine) >> 1) - (signed long int)64000;
+    var2 = (((var1 >> 2) * (var1 >> 2)) >> 11) * ((signed long int)dig_P6);
+    var2 = var2 + ((var1 * ((signed long int)dig_P5)) << 1);
+    var2 = (var2 >> 2) + (((signed long int)dig_P4) << 16);
+    var1 = (((dig_P3 * (((var1 >> 2) * (var1 >> 2)) >> 13)) >> 3) + ((((signed long int)dig_P2) * var1) >> 1)) >> 18;
+    var1 = ((((32768 + var1)) * ((signed long int)dig_P1)) >> 15);
+    
+    if (var1 == 0) {
+        return false;
+    }
+    
+    p = (((unsigned long int)(((signed long int)1048576) - adc_P) - (var2 >> 12))) * 3125;
+    if (p < 0x80000000) {
+        p = (p << 1) / ((unsigned long int)var1);
+    } else {
+        p = (p / (unsigned long int)var1) * 2;
+    }
+    
+    var1 = (((signed long int)dig_P9) * ((signed long int)(((p >> 3) * (p >> 3)) >> 13))) >> 12;
+    var2 = (((signed long int)(p >> 2)) * ((signed long int)dig_P8)) >> 13;
+    p = (unsigned long int)((signed long int)p + ((var1 + var2 + dig_P7) >> 4));
+    
+    *pressure = (double)p / 100.0; // Convert to hPa
+    
+    return true;
 }
 
-uint8_t read8(uint8_t reg) {
-  Wire.beginTransmission(BMP280_ADDRESS);
-  Wire.write(reg);
-  Wire.endTransmission(false);
-  Wire.requestFrom(BMP280_ADDRESS, 1);
-  return Wire.read();
+// Calculate altitude from pressure in cm
+static float calculateAltitude(float pressure_hPa) {
+    // Sea level pressure = 1013.25 hPa
+    // Returns altitude in m
+    return 44330.0 * (1.0 - pow(pressure_hPa / 1013.25, 1.0 / 5.255));
 }
 
-uint16_t read16_LE(uint8_t reg) {
-  Wire.beginTransmission(BMP280_ADDRESS);
-  Wire.write(reg);
-  Wire.endTransmission(false);
-  Wire.requestFrom(BMP280_ADDRESS, 2);
-  uint16_t lo = Wire.read();
-  uint16_t hi = Wire.read();
-  return (hi << 8) | lo;
-}
-
-int16_t readS16_LE(uint8_t reg) {
-  return (int16_t)read16_LE(reg);
-}
-
-void readCalibrationData() {
-  dig_T1 = read16_LE(0x88);
-  dig_T2 = readS16_LE(0x8A);
-  dig_T3 = readS16_LE(0x8C);
-  dig_P1 = read16_LE(0x8E);
-  dig_P2 = readS16_LE(0x90);
-  dig_P3 = readS16_LE(0x92);
-  dig_P4 = readS16_LE(0x94);
-  dig_P5 = readS16_LE(0x96);
-  dig_P6 = readS16_LE(0x98);
-  dig_P7 = readS16_LE(0x9A);
-  dig_P8 = readS16_LE(0x9C);
-  dig_P9 = readS16_LE(0x9E);
-}
-
-int32_t readRawTemp() {
-  Wire.beginTransmission(BMP280_ADDRESS);
-  Wire.write(0xFA);
-  Wire.endTransmission(false);
-  Wire.requestFrom(BMP280_ADDRESS, 3);
-  int32_t adc = Wire.read() << 12 | Wire.read() << 4 | Wire.read() >> 4;
-  return adc;
-}
-
-int32_t readRawPressure() {
-  Wire.beginTransmission(BMP280_ADDRESS);
-  Wire.write(0xF7);
-  Wire.endTransmission();
-  Wire.requestFrom(BMP280_ADDRESS, 3);
-  int32_t adc = Wire.read() << 12 | Wire.read() << 4 | Wire.read() >> 4;
-  return adc;
-}
-
-float compensateTemperature(int32_t adc_T) {
-  int32_t var1 = ((((adc_T >> 3) - ((int32_t)dig_T1 << 1))) * dig_T2) >> 11;
-  int32_t var2 = (((((adc_T >> 4) - ((int32_t)dig_T1)) *
-                    ((adc_T >> 4) - ((int32_t)dig_T1))) >> 12) *
-                  dig_T3) >> 14;
-  t_fine = var1 + var2;
-  return ((t_fine * 5 + 128) >> 8) / 100.0;
-}
-
-float compensatePressure(int32_t adc_P) {
-  int64_t var1 = ((int64_t)t_fine) - 128000;
-  int64_t var2 = var1 * var1 * (int64_t)dig_P6;
-  var2 = var2 + ((var1 * (int64_t)dig_P5) << 17);
-  var2 = var2 + (((int64_t)dig_P4) << 35);
-  var1 = ((var1 * var1 * (int64_t)dig_P3) >> 8) +
-         ((var1 * (int64_t)dig_P2) << 12);
-  var1 = (((((int64_t)1) << 47) + var1)) * ((int64_t)dig_P1) >> 33;
-  if (var1 == 0) return 0;
-  int64_t p = 1048576 - adc_P;
-  p = (((p << 31) - var2) * 3125) / var1;
-  var1 = (((int64_t)dig_P9) * (p >> 13) * (p >> 13)) >> 25;
-  var2 = (((int64_t)dig_P8) * p) >> 19;
-  p = ((p + var1 + var2) >> 8) + (((int64_t)dig_P7) << 4);
-  return (float)p / 25600.0;  // hPa
-}
-
-float calculateAltitude(float pressure, float seaLevel_hPa = 1013.25) {
-  return 44330.0 * (1.0 - pow(pressure / seaLevel_hPa, 0.1903));
+// Update sensor reading and store raw altitude
+static bool updateSensorReading(void) {
+    uint32_t adc_P, adc_T;
+    float pressure, temperature;
+    
+    if (!readRawData(&adc_P, &adc_T)) return false;
+    if (!calculatePressureTemp(adc_P, adc_T, &pressure, &temperature)) return false;
+    
+    rawAltitude = calculateAltitude(pressure);
+    return true;
 }
 
 bool BMP280_init(void) {
-  // Check if calibration registers are readable
-  if (!i2c_available(0x88, 24)) return false;  // calibration block
-  if (!i2c_available(0xF7, 6)) return false;   // pressure/temp block
-  write8(0xF4, 0x27); // ctrl_meas
-  write8(0xF5, 0xA0); // config
-
-  readCalibrationData();
-
-  // Initial reading to get base altitude
-  int32_t rawTemp = readRawTemp();
-  if (rawTemp == 0) return false; // unlikely, but sanity check
-  float temp = compensateTemperature(rawTemp);
-  float pressure = compensatePressure(readRawPressure());
-
-  if (isnan(temp) || isnan(pressure) || pressure < 300 || pressure > 1100) return false;
-
-  baseAltitude = calculateAltitude(pressure);
-  return true;
+    // Initialize I2C
+    Wire.setClock(400000);
+    Wire.begin();
+    delay(250);
+    
+    // Configure sensor
+    Wire.beginTransmission(BMP280_ADDRESS);
+    Wire.write(0xF4);
+    Wire.write(0x57);  // oversampling x16, normal mode
+    if (Wire.endTransmission() != 0) return false;
+    
+    Wire.beginTransmission(BMP280_ADDRESS);
+    Wire.write(0xF5);
+    Wire.write(0x14);  // standby 125ms, filter off
+    if (Wire.endTransmission() != 0) return false;
+    
+    // Read calibration data
+    delay(250);
+    if (!readCalibrationData()) return false;
+    
+    // Calibrate altitude reference by averaging 2000 readings
+    delay(250);
+    float altitudeSum = 0;
+    for (int i = 0; i < 2000; i++) {
+        if (!updateSensorReading()) return false;
+        altitudeSum += rawAltitude;
+        delay(1);
+    }
+    altitudeReference = altitudeSum / 2000.0;
+    
+    return true;
 }
 
-
 bool BMP280_read(bmp280Data_t *data) {
-  if (!i2c_available(0xF7, 6)) return false;
+    if (data == NULL) return false;
+    
+    uint32_t adc_P, adc_T;
+    float pressure, temperature;
+    
+    // Read raw data
+    if (!readRawData(&adc_P, &adc_T)) return false;
+    
+    // Calculate pressure and temperature
+    if (!calculatePressureTemp(adc_P, adc_T, &pressure, &temperature)) return false;
+    
+    // Calculate altitude
+    float altitude_cm = calculateAltitude(pressure);
+    float relative_altitude_cm = altitude_cm - altitudeReference;
+    
+    // Fill data structure
+    data->pressure = pressure;
+    data->temperature = temperature;
+    data->altitude = relative_altitude_cm;
+    
+    // Store raw altitude for reference functions
+    // rawAltitude = altitude_cm;
+    // output in meters:
+    rawAltitude = altitude_cm / 100.00f;
+    
+    return true;
+}
 
-  int32_t rawTemp = readRawTemp();
-  if (rawTemp == 0) return false;
+float BMP280_get_raw_altitude(void) {
+    return rawAltitude;
+}
 
-  float temp = compensateTemperature(rawTemp);
-  float pressure_ = compensatePressure(readRawPressure());
-  if (isnan(temp) || isnan(pressure_)) return false;
-
-  float altitude = calculateAltitude(pressure_);
-  float relative = altitude - baseAltitude;
-
-  updateAltitude(relative); // Update smoothed altitude
-
-  // data->altitude = relative;
-  data->altitude = smoothedAltitude; // Use smoothed altitude
-  data->pressure = pressure_;
-  data->temperature = temp;
-
-  return true;
+void BMP280_reset_altitude_reference(void) {
+    altitudeReference = rawAltitude;
 }

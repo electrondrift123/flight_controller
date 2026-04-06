@@ -187,8 +187,8 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
   static float altSmooth = 0.0f;
 
   // Tune these once (start with these values)
-  const float Q_pos = 0.0015f;   // process noise on position
-  const float Q_vel = 0.0025f;    // process noise on velocity (higher = trust accel more)
+  const float Q_pos = 0.0033f;   // process noise on position
+  const float Q_vel = 0.0013f;    // process noise on velocity (higher = trust accel more)
   const float R_baro = 0.08f;    // baro measurement noise (m²) — tune down if you oversample BMP280
 
   init_kalmanAltitude(&kalmanState, 0.0f, Q_pos, Q_vel, R_baro); // Q_pos, Q_vel, R_baro - tune these parameters based on your system's noise characteristics
@@ -263,6 +263,7 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
     // Update shared data: BMP280 altitude
     if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE){
       telemetry[0] = fusedAlt; // Update altitude in telemetry
+      telemetry[1] = velocity_z; // Update vertical velocity in telemetry
       xSemaphoreGive(telemetryMutex);
     }
 
@@ -295,8 +296,6 @@ void PIDtask(void* Parameters){
   float throttle, rollInput, pitchInput, yawInput; // user inputs (throttle = velocity setpoint)
 
   float rollRate, pitchRate, yawRate; // from sensors
-
-  static bool altitudeLockSet = false;
 
   // EMA filter variables & constants
   static float throttleFiltered = 0.0f;
@@ -352,6 +351,13 @@ void PIDtask(void* Parameters){
   float limit_z = 400.0f; // P-controller authority (TUNABLE)
   initAltitudeControl(&vc_z, KP_z, KI_z, limit_z);
 
+  // velocity control for altitude hold (z-axis) PI controller
+  float KP_vz = 500.0f; 
+  float KI_vz = 80.0f;
+  float limit_vz = 400.0f; // P-controller authority (TUNABLE)
+  float velocity_z = 0.0f; // vertical velocity from Kalman filter
+  initAltitudeControl(&vz_in, KP_vz, KI_vz, limit_vz);
+
   vTaskDelay(pdMS_TO_TICKS(3000)); // delay for arming motor
 
   for (;;){
@@ -403,6 +409,7 @@ void PIDtask(void* Parameters){
 
     if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE){
       altitude = telemetry[0]; // Get altitude from telemetry
+      velocity_z = telemetry[1]; // Get vertical velocity from telemetry
 
       // update telemetry data PID gains: temporary (roll only for analysis)
       // telemetry[1] = pidRoll.Kp;
@@ -494,24 +501,35 @@ void PIDtask(void* Parameters){
       pidPitchRate.landed = pid_landed_flag;
       pidYawRate.landed   = pid_landed_flag;  
       vc_z.is_flying = !landed; // also inform altitude controller
+      vz_in.is_flying = !landed;
 
       // height velocity control (z-axis): throttleFiltered is the velocity setpoint [-0.8m/s, 0.8m/s]
-      float h = altitude; // current altitude
+      // float h = altitude; // current altitude
 
-      // control Tb
-      static float throttle_base_smooth = 350.0f;
-      float target_base = landed ? 350.0f : 500.0f;
-      throttle_base_smooth += (target_base - throttle_base_smooth) * 0.2f;  // LPF
-      throttle_base = throttle_base_smooth;
+      // // control Tb
+      // static float throttle_base_smooth = 350.0f;
+      // float target_base = landed ? 350.0f : 500.0f;
+      // throttle_base_smooth += (target_base - throttle_base_smooth) * 0.2f;  // LPF
+      // throttle_base = throttle_base_smooth;
 
-      float alt_correction = computeAltitudeControl(&vc_z, throttleFiltered, h, dt_out);
+      // float alt_correction = computeAltitudeControl(&vc_z, throttleFiltered, h, dt_out);
 
-      throttle_cmd = throttle_base + alt_correction; 
-      if (vc_z.is_flying) throttle_cmd = constrainFloat(throttle_cmd, 250.0f, 1000.0f);
-      else throttle_cmd = constrainFloat(throttle_cmd, 50.0f, 1000.0f);
+      // throttle_cmd = throttle_base + alt_correction; 
+      // if (vc_z.is_flying) throttle_cmd = constrainFloat(throttle_cmd, 250.0f, 1000.0f);
+      // else throttle_cmd = constrainFloat(throttle_cmd, 50.0f, 1000.0f);
 
       outer_loop_counter = 0; // reset the counter
     }
+
+    //////// ALtitude Hold Logic (velocity control) //////////
+    float vz_correction = computeVelocityControlZ(&vz_in, throttleFiltered, velocity_z, dt);
+
+    throttle_cmd = 500.0f + vz_correction; // 500 is the hover throttle (TUNABLE)
+
+    if (vz_in.is_flying) throttle_cmd = constrainFloat(throttle_cmd, 250.0f, 1000.0f);
+    else throttle_cmd = constrainFloat(throttle_cmd, 50.0f, 1000.0f);
+
+    ///////// Altitude Hold Logic (velocity control) END //////////
 
     yaw_rate_setpoint = yawInputFiltered; // deg/s (YAW RATE CMD)
 

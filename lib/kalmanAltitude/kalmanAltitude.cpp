@@ -22,7 +22,8 @@ void init_kalmanAltitude(KalmanState_t *state,
 float kalmanAltitudeUpdate(KalmanState_t *state, float baroAlt, float accD, float dt) {
     if (dt <= 0.0f) return state->x[0];
 
-    float acc_z = (accD - 1.0f) * 9.81f;
+    // float acc_z = (accD - 1.0f) * 9.81f; // poitive vz downward
+    float acc_z = (1.0f - accD) * 9.81f; // poitive vz upward
 
     // === Predict (Time Update) ===
     state->x[0] += state->x[1] * dt + 0.5f * acc_z * dt * dt;
