@@ -142,7 +142,8 @@ bool BMP280_init(void) {
     
     Wire.beginTransmission(BMP280_ADDRESS);
     Wire.write(0xF5);
-    Wire.write(0x14);  // standby 125ms, filter off
+    // Wire.write(0x14);  // standby 125ms, filter off
+    Wire.write(0x10); // 0x10 = 000(0.5ms standby) 100(Filter x16) 0(3-wire off)
     if (Wire.endTransmission() != 0) return false;
     
     // Read calibration data
