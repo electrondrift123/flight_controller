@@ -47,6 +47,13 @@ void setup() {
   mutexes_init(); // Initialize mutexes
   delay(300); // delay before radio init
 
+  // ///// ESC calibration procedure:
+  // TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 2000;
+  // delay(20000); // 10 sec
+  // TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 1000;
+  // delay(60000); // 60 sec
+  // ////////// END
+
   if (!main_rx_init()){
     Serial.println("Error initializing main_rx");
     // buzz_on();

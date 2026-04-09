@@ -635,45 +635,41 @@ void PIDtask(void* Parameters) {
     const float dt = 0.002f;
 
     // ====================== CONFIG ======================
-    const float HOVER_THROTTLE = 1500.0f;     // TUNABLE: measured hover throttle for your 1kg drone
-    // const float MAX_VZ_CMD     = 0.8f;       // m/s (max climb/descent rate)
+    const float BASE_THROTTLE = 1000.0f;      // Fixed base in mixer
+    const float MAX_TB        = 500.0f;       // Maximum hover component (50%)
+    const float HOVER_TB      = 500.0f;       // Starting guess - tune this later
 
-    // PID gains for vertical velocity controller (much more reasonable)
     const float KP_VZ = 14.0f;
     const float KI_VZ = 4.0f;
-    const float VZ_OUTPUT_LIMIT = 300.0f;
+    const float VZ_OUTPUT_LIMIT = 320.0f;
 
-    // Arming
-    const float ARM_HOLD_TIME = 2.0f;        // seconds, DJI style
+    const float ARM_HOLD_TIME = 2.0f;
 
-    // Motor limits
     const float MOTOR_MIN = 1050.0f;
     const float MOTOR_MAX = 2000.0f;
 
-    // kill switch
-    bool KILL_MOTORS = false;              // kill switch flag
+    bool KILL_MOTORS = false;
 
     // ====================== VARIABLES ======================
-    float vz_cmd = 0.0f;                    // Renamed: vertical velocity command (m/s)
-    float velocity_z = 0.0f;                // from Kalman
+    float vz_cmd = 0.0f;                    // Raw stick [-80,80]
+    float vz_cmdFiltered = 0.0f;            // in m/s
+    float velocity_z = 0.0f;
     float altitude = 0.0f;
 
     float roll, pitch, yaw;
     float rollRate, pitchRate, yawRate;
 
-    float rollInput, pitchInput, yawInput;   // raw stick inputs
+    float rollInput, pitchInput, yawInput;
 
-    // Filtered inputs
     float rollInputFiltered = 0.0f;
     float pitchInputFiltered = 0.0f;
     float yawInputFiltered = 0.0f;
-    float vz_cmdFiltered = 0.0f;
 
-    // EMA filters (initialized once)
-    emaInit(&R_LPF, 1.0f, 15.0f, 500.0f);   // Roll
-    emaInit(&P_LPF, 1.0f, 15.0f, 500.0f);   // Pitch
-    emaInit(&Y_LPF, 1.0f, 20.0f, 500.0f);   // Yaw
-    emaInit(&T_LPF, 1.0f, 12.0f, 500.0f);   // Velocity command
+    // EMA filters
+    emaInit(&R_LPF, 1.0f, 15.0f, 500.0f);
+    emaInit(&P_LPF, 1.0f, 15.0f, 500.0f);
+    emaInit(&Y_LPF, 1.0f, 20.0f, 500.0f);
+    emaInit(&T_LPF, 1.0f, 12.0f, 500.0f);
 
     // State machine
     typedef enum {
@@ -686,30 +682,28 @@ void PIDtask(void* Parameters) {
 
     FlightState_t flightState = DISARMED;
     float armingTimer = 0.0f;
-    float takeoffRamp = 0.0f;           // 0.0 → 1.0 during takeoff
+    float takeoffRamp = 0.0f;
 
-    float throttle_bias = 0.0f;         // tb = ramped hover throttle
+    float tb = 0.0f;                        // 0 → 500 (this is your hover component)
 
     float motor_cmd[4] = {MOTOR_MIN, MOTOR_MIN, MOTOR_MIN, MOTOR_MIN};
 
-    // Velocity controller
+    VelocityControlZData_t vz_in;
     initVelocityControlZ(&vz_in, KP_VZ, KI_VZ, VZ_OUTPUT_LIMIT);
 
-    // Rate setpoints
     float roll_rate_setpoint = 0.0f;
     float pitch_rate_setpoint = 0.0f;
     float yaw_rate_setpoint = 0.0f;
 
-    // Sensor data
     float ax, ay, az, wx, wy, wz, mx, my, mz;
 
     int outer_loop_counter = 0;
     int print_counter = 0;
 
-    vTaskDelay(pdMS_TO_TICKS(3000));   // 3 sec, good for ESC
+    vTaskDelay(pdMS_TO_TICKS(3000));
 
     for (;;) {
-        // ====================== SENSOR READ ======================
+        // Sensor Read (Madgwick + Telemetry)
         if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
             ax = MadgwickSensorList[0]; ay = MadgwickSensorList[1]; az = MadgwickSensorList[2];
             wx = MadgwickSensorList[3]; wy = MadgwickSensorList[4]; wz = MadgwickSensorList[5];
@@ -735,28 +729,25 @@ void PIDtask(void* Parameters) {
         pitchRate = wy;
         yawRate   = wz;
 
-        // Telemetry (altitude + vertical velocity)
         if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-            altitude   = telemetry[0];
-            velocity_z = telemetry[1];
-            xSemaphoreGive(telemetryMutex);
+          altitude = telemetry[0];
+          velocity_z = telemetry[1];
+          xSemaphoreGive(telemetryMutex);
         }
 
-        // ====================== USER INPUT ======================
+        // User Input
         if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-            vz_cmd     = inputList[0];   // [-80,80] representing [-0.8, 0.8] m/s velocity command
-            yawInput   = inputList[1];   // [-_, _] deg/s yaw rate command
-            pitchInput = inputList[2];   // [-30, 30] deg pitch command
-            rollInput  = inputList[3];   // [-30, 30] deg roll command
+            vz_cmd     = inputList[0]; // [-0.8, 0.8] m/s
+            yawInput   = inputList[1]; // [-90, 90] deg/s but in radians: [-1.57, 1.57] rad/s
+            pitchInput = inputList[2]; // [-30, 30] deg but in radians: [-0.52, 0.52] rad
+            rollInput  = inputList[3]; // [-30, 30] deg but in radians: [-0.52, 0.52] rad
 
             KILL_MOTORS = (inputList[4] != 0.0f);
-            // Emergency_Landing = (inputList[5] != 0.0f);   // keep if you want
-
             xSemaphoreGive(nRF24Mutex);
         }
 
-        // ====================== ARMING LOGIC (DJI Style) ======================
-        bool sticksInArmPosition = (vz_cmd < -78.0f) && (fabsf(yawInput) > YAW_MAX);
+        // ====================== ARMING (DJI Style) ======================
+        bool sticksInArmPosition = (vz_cmd < -0.70f) && (fabsf(pitchInput) > 0.50f);
 
         if (flightState == DISARMED) {
             if (sticksInArmPosition) {
@@ -764,9 +755,9 @@ void PIDtask(void* Parameters) {
                 if (armingTimer >= ARM_HOLD_TIME) {
                     flightState = ARMED_IDLE;
                     armingTimer = 0.0f;
-                    throttle_bias = 0.0f;
-                    takeoffRamp = 0.0f;
-                    for (int i = 0; i < 4; i++) motor_cmd[i] = 1150.0f; // ensure motor commands are set for mixer
+                    tb = 0.0f;
+                    buzz_it(1, 120);                    // One short beep on arm
+                    for (int i = 0; i < 4; i++) motor_cmd[i] = 1150.0f;
                 }
             } else {
                 armingTimer = 0.0f;
@@ -776,15 +767,14 @@ void PIDtask(void* Parameters) {
         // ====================== STATE MACHINE ======================
         switch (flightState) {
             case DISARMED:
-                throttle_bias = 1000.0f; // 1000 min
+                tb = 0.0f;
                 vz_in.is_flying = 0.0f;
                 break;
 
             case ARMED_IDLE:
-                throttle_bias = 1150.0f;           // low idle
+                tb = 0.0f;
                 vz_in.is_flying = 0.0f;
-                // Transition to takeoff when pilot raises throttle stick
-                if (vz_cmd > -40.0f) {
+                if (vz_cmd > -30.0f) {
                     flightState = TAKEOFF;
                     takeoffRamp = 0.0f;
                 }
@@ -792,19 +782,19 @@ void PIDtask(void* Parameters) {
 
             case TAKEOFF:
                 vz_in.is_flying = 1.0f;
-                takeoffRamp += dt * 0.8f;          // ramp over ~1.25 seconds
+                takeoffRamp += dt * 0.75f;           // ~1.3s ramp
                 if (takeoffRamp > 1.0f) takeoffRamp = 1.0f;
 
-                throttle_bias = takeoffRamp * HOVER_THROTTLE;
+                tb = takeoffRamp * MAX_TB;           // ramp 0 → 500
 
-                if (takeoffRamp >= 1.0f && fabsf(velocity_z) < 0.3f && altitude > 0.8f) {
+                if (takeoffRamp >= 1.0f && altitude > 0.6f && fabsf(velocity_z) < 0.5f) {
                     flightState = FLYING;
                 }
                 break;
 
             case FLYING:
                 vz_in.is_flying = 1.0f;
-                throttle_bias = HOVER_THROTTLE;    // stable hover bias
+                tb = HOVER_TB;                       // Now fixed at 500.0f
                 break;
         }
 
@@ -817,64 +807,57 @@ void PIDtask(void* Parameters) {
         rollInputFiltered  = constrainFloat(R_LPF.output, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
         pitchInputFiltered = constrainFloat(P_LPF.output, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
         yawInputFiltered   = constrainFloat(Y_LPF.output, -YAW_MAX, YAW_MAX);
-        vz_cmdFiltered     = T_LPF.output;   // filtered velocity command
+        vz_cmdFiltered     = T_LPF.output;   // [-0.8,0.8] m/s
 
-        // ====================== ATTITUDE OUTER LOOP (100 Hz) ======================
+        // Attitude outer loop @ 100 Hz
         outer_loop_counter++;
-        if (outer_loop_counter >= 5) {   // 500 Hz / 5 = 100 Hz
+        if (outer_loop_counter >= 5) {
             roll_rate_setpoint  = computeLyGAPID_out(&pidRoll,  rollInputFiltered,  roll,  0.01f);
             pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, 0.01f);
-
             outer_loop_counter = 0;
         }
 
         yaw_rate_setpoint = yawInputFiltered;
 
-        // Update landed flag for all PIDs
         bool isLanded = (flightState == DISARMED || flightState == ARMED_IDLE);
         pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = isLanded ? 1.0f : 0.0f;
 
-        // ====================== VERTICAL VELOCITY CONTROLLER ======================
+        // Vertical Velocity Controller
         float vz_correction = 0.0f;
         if (flightState == TAKEOFF || flightState == FLYING) {
             vz_correction = computeVelocityControlZ(&vz_in, vz_cmdFiltered, velocity_z, dt);
         }
 
-        float total_throttle = throttle_bias + vz_correction; // [1000, 2000]
-        total_throttle = constrainFloat(total_throttle, MOTOR_MIN, MOTOR_MAX);
+        // float total_throttle = BASE_THROTTLE + tb + vz_correction;
+        float total_throttle = BASE_THROTTLE + tb; // for test rod (attitude control test)
 
-        // ====================== MOTOR MIXER ======================
+        // Motor Mixer
         if (KILL_MOTORS) {
             resetLyGAPID(&pidRoll); resetLyGAPID(&pidPitch);
             resetLyGAPID(&pidRollRate); resetLyGAPID(&pidPitchRate); resetLyGAPID(&pidYawRate);
-
             for (int i = 0; i < 4; i++) motor_cmd[i] = MOTOR_MIN;
-        } 
-        else {
-            float R_mix = constrainFloat(computeLyGAPID_in(&pidRollRate,  roll_rate_setpoint,  rollRate,  dt), -U_MAX_ROLL_RATE,  U_MAX_ROLL_RATE);
+        } else {
+            float R_mix = constrainFloat(computeLyGAPID_in(&pidRollRate, roll_rate_setpoint, rollRate, dt), -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
             float P_mix = constrainFloat(computeLyGAPID_in(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt), -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
             float Y_mix = constrainFloat(computeLyGAPID_yaw(&pidYawRate, yaw_rate_setpoint, yawRate, dt), -U_MAX_YAW_RATE, U_MAX_YAW_RATE);
 
-            motor_cmd[0] = total_throttle + R_mix + P_mix - Y_mix;  // FL
-            motor_cmd[1] = total_throttle - R_mix + P_mix + Y_mix;  // FR
-            motor_cmd[2] = total_throttle + R_mix - P_mix + Y_mix;  // BL
-            motor_cmd[3] = total_throttle - R_mix - P_mix - Y_mix;  // BR
+            motor_cmd[0] = total_throttle + R_mix + P_mix - Y_mix;
+            motor_cmd[1] = total_throttle - R_mix + P_mix + Y_mix;
+            motor_cmd[2] = total_throttle + R_mix - P_mix + Y_mix;
+            motor_cmd[3] = total_throttle - R_mix - P_mix - Y_mix;
         }
 
-        // Clamp all motors
         for (int i = 0; i < 4; i++) {
             motor_cmd[i] = constrainFloat(motor_cmd[i], MOTOR_MIN, MOTOR_MAX);
         }
 
-        // ====================== OUTPUT TO MOTORS ======================
+        // Motor Output
         TIM2->CCR1 = (uint16_t)motor_cmd[0];
         TIM2->CCR2 = (uint16_t)motor_cmd[1];
         TIM2->CCR3 = (uint16_t)motor_cmd[2];
         TIM2->CCR4 = (uint16_t)motor_cmd[3];
 
-        // Optional debug (every 100ms)
         if (++print_counter >= 50) {
-            // Serial prints here if needed
             print_counter = 0;
         }
 
@@ -1034,8 +1017,8 @@ void RXtask(void* Parameters){
         if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) xTimerStart(linkWatchdogTimer, 0);
         else xTimerReset(linkWatchdogTimer, 0);
         // Process incoming commands (scaling/clamping)
-        float Tcmd = (float)rx_load[0];
-        float Ycmd = ((float)rx_load[1] / 100.0f) * DEG_TO_RAD;
+        float Tcmd = (float)rx_load[0] / 100.0f; // Expected in the range [-80, 80] -> [-0.8, 0.8] m/s
+        float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD; // [-90 deg/s, 90 deg/s]
         float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD;
         float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
         float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;

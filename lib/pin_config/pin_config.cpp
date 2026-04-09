@@ -102,7 +102,7 @@ void MotorPWM_TIM2_Init(void) {
     TIM2->CR1 |= TIM_CR1_CEN;
 
     // Safe initial value: 1 ms pulse (1000 µs)
-    TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 1020;
+    TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 1000;
 }
 
 // void MotorPWM_TIM2_Init(void) {

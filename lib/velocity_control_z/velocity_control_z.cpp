@@ -18,20 +18,19 @@ float computeVelocityControlZ(VelocityControlZData_t* vz, float v_cmd, float vel
         return 0.0f; 
     }
 
-    // Scale stick input to reasonable velocity command (m/s)
-    v_cmd = v_cmd / 100.0f;                 // e.g. [-80,80] → [-0.8, 0.8] m/s
+    // v_cmd & velocity_z are both in m/s now
 
     float error = v_cmd - velocity_z;       // positive = need more upward thrust
 
     // === Improved Integral with better anti-windup ===
-    vz->integral += error * dt;
+    // vz->integral += error * dt;
 
     // Optional: conditional integration (only integrate when not saturated)
-    // float u_temp = vz->kp * error + vz->ki * vz->integral;
-    // if (u_temp > vz->output_limit || u_temp < -vz->output_limit) {
-    //     // don't integrate further in the direction that saturates
-    //     vz->integral = vz->integral - error * dt;  // back off last step
-    // }
+    float u_temp = vz->kp * error + vz->ki * vz->integral;
+    if (u_temp > vz->output_limit || u_temp < -vz->output_limit) {
+        // don't integrate further in the direction that saturates
+        vz->integral = vz->integral - error * dt;  // back off last step
+    }
 
     // Hard clamp integral (your original)
     const float integral_limit = 250.0f;
@@ -68,8 +67,7 @@ float computeAltitudeControl(VelocityControlZData_t* vc_z, float v_cmd, float al
         return 0.0f; 
     }
 
-    // scale back the stick input
-    v_cmd = v_cmd / 100.0f;
+    // v_cmd and 
     
     // dt = 0.010s
     // input stick: [-80,80] units = [-0.8, 0.8] m/s cmd
