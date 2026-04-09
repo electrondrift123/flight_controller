@@ -92,12 +92,8 @@ static void linkTimeoutCallback(TimerHandle_t xTimer){
   inputList[1] = 0.0f;
   inputList[2] = 0.0f;
   inputList[3] = 0.0f;
-  inputList[4] = 1.0f;   // ← KILL / failsafe
+  if (inputList[4] == 0.0f) inputList[5] = 1.0f;   // set E-landing flag;   
   taskEXIT_CRITICAL();
-
-  // Alternative (if you really prefer semaphore - less recommended here):
-  // if (xSemaphoreTake(nRF24Mutex, 0) == pdTRUE) { ... xSemaphoreGive(...); }
-  // But critical section is better for this ultra-short operation
 }
 void initLinkWatchdog(void){
   if (linkWatchdogTimer != NULL) {
@@ -649,6 +645,7 @@ void PIDtask(void* Parameters) {
     const float MOTOR_MAX = 2000.0f;
 
     bool KILL_MOTORS = false;
+    bool E_LAND = false; // Emergency Landing flag if signal is loss
 
     // ====================== VARIABLES ======================
     float vz_cmd = 0.0f;                    // Raw stick [-80,80]
@@ -737,13 +734,14 @@ void PIDtask(void* Parameters) {
 
         // User Input
         if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-            vz_cmd     = inputList[0]; // [-0.8, 0.8] m/s
-            yawInput   = inputList[1]; // [-90, 90] deg/s but in radians: [-1.57, 1.57] rad/s
-            pitchInput = inputList[2]; // [-30, 30] deg but in radians: [-0.52, 0.52] rad
-            rollInput  = inputList[3]; // [-30, 30] deg but in radians: [-0.52, 0.52] rad
+          vz_cmd     = inputList[0]; // [-0.8, 0.8] m/s
+          yawInput   = inputList[1]; // [-90, 90] deg/s but in radians: [-1.57, 1.57] rad/s
+          pitchInput = inputList[2]; // [-30, 30] deg but in radians: [-0.52, 0.52] rad
+          rollInput  = inputList[3]; // [-30, 30] deg but in radians: [-0.52, 0.52] rad
 
-            KILL_MOTORS = (inputList[4] != 0.0f);
-            xSemaphoreGive(nRF24Mutex);
+          KILL_MOTORS = (inputList[4] != 0.0f);
+          E_LAND = (inputList[5] != 0.0f);
+          xSemaphoreGive(nRF24Mutex);
         }
 
         // ====================== ARMING (DJI Style) ======================
@@ -833,22 +831,60 @@ void PIDtask(void* Parameters) {
 
         // Motor Mixer
         if (KILL_MOTORS) {
-            resetLyGAPID(&pidRoll); resetLyGAPID(&pidPitch);
-            resetLyGAPID(&pidRollRate); resetLyGAPID(&pidPitchRate); resetLyGAPID(&pidYawRate);
-            for (int i = 0; i < 4; i++) motor_cmd[i] = MOTOR_MIN;
-        } else {
-            float R_mix = constrainFloat(computeLyGAPID_in(&pidRollRate, roll_rate_setpoint, rollRate, dt), -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
-            float P_mix = constrainFloat(computeLyGAPID_in(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt), -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
-            float Y_mix = constrainFloat(computeLyGAPID_yaw(&pidYawRate, yaw_rate_setpoint, yawRate, dt), -U_MAX_YAW_RATE, U_MAX_YAW_RATE);
+          resetLyGAPID(&pidRoll); resetLyGAPID(&pidPitch);
+          resetLyGAPID(&pidRollRate); resetLyGAPID(&pidPitchRate); resetLyGAPID(&pidYawRate);
+          for (int i = 0; i < 4; i++) motor_cmd[i] = MOTOR_MIN;
+        } else if (E_LAND && flightState != DISARMED){
+          // Only do emergency landing if we're actually flying
+          // ============== EMERGENCY LANDING ==============
+          // Slowly reduce tb (hover component) down to 300 for controlled descent
+          static float descent_target_tb = 300.0f;
+          const float descent_rate = 80.0f;        // How fast tb decreases per second (tune this)
 
-            motor_cmd[0] = total_throttle + R_mix + P_mix - Y_mix;
-            motor_cmd[1] = total_throttle - R_mix + P_mix + Y_mix;
-            motor_cmd[2] = total_throttle + R_mix - P_mix + Y_mix;
-            motor_cmd[3] = total_throttle - R_mix - P_mix - Y_mix;
+          // Ramp tb down smoothly
+          if (tb > descent_target_tb) {
+            tb -= descent_rate * dt;
+          } else {
+            tb = descent_target_tb;
+          }
+
+          // Disable velocity controller during emergency landing to prevent windup
+          vz_in.is_flying = 0.0f;
+          vz_correction = 0.0f;
+
+          // Use reduced tb + attitude corrections only
+          float total_throttle = BASE_THROTTLE + tb;
+
+          float R_mix = constrainFloat(computeLyGAPID_in(&pidRollRate, roll_rate_setpoint, rollRate, dt), -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
+          float P_mix = constrainFloat(computeLyGAPID_in(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt), -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
+          float Y_mix = constrainFloat(computeLyGAPID_yaw(&pidYawRate, yaw_rate_setpoint, yawRate, dt), -U_MAX_YAW_RATE, U_MAX_YAW_RATE);
+
+          motor_cmd[0] = total_throttle + R_mix + P_mix - Y_mix;
+          motor_cmd[1] = total_throttle - R_mix + P_mix + Y_mix;
+          motor_cmd[2] = total_throttle + R_mix - P_mix + Y_mix;
+          motor_cmd[3] = total_throttle - R_mix - P_mix - Y_mix;
+          
+          // Check if we've landed
+          if (tb <= descent_target_tb && altitude < 0.3f && fabsf(velocity_z) < 0.2f) {
+            // Landed - kill motors and disarm
+            for (int i = 0; i < 4; i++) motor_cmd[i] = MOTOR_MIN;
+            flightState = DISARMED;
+            tb = 0.0f;
+            vz_in.is_flying = 0.0f;
+          }
+        } else {
+          float R_mix = constrainFloat(computeLyGAPID_in(&pidRollRate, roll_rate_setpoint, rollRate, dt), -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
+          float P_mix = constrainFloat(computeLyGAPID_in(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt), -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
+          float Y_mix = constrainFloat(computeLyGAPID_yaw(&pidYawRate, yaw_rate_setpoint, yawRate, dt), -U_MAX_YAW_RATE, U_MAX_YAW_RATE);
+
+          motor_cmd[0] = total_throttle + R_mix + P_mix - Y_mix;
+          motor_cmd[1] = total_throttle - R_mix + P_mix + Y_mix;
+          motor_cmd[2] = total_throttle + R_mix - P_mix + Y_mix;
+          motor_cmd[3] = total_throttle - R_mix - P_mix - Y_mix;
         }
 
         for (int i = 0; i < 4; i++) {
-            motor_cmd[i] = constrainFloat(motor_cmd[i], MOTOR_MIN, MOTOR_MAX);
+          motor_cmd[i] = constrainFloat(motor_cmd[i], MOTOR_MIN, MOTOR_MAX);
         }
 
         // Motor Output
@@ -858,7 +894,7 @@ void PIDtask(void* Parameters) {
         TIM2->CCR4 = (uint16_t)motor_cmd[3];
 
         if (++print_counter >= 50) {
-            print_counter = 0;
+          print_counter = 0;
         }
 
         vTaskDelayUntil(&lastWakeTime, interval);
