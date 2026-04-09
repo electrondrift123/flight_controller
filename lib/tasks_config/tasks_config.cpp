@@ -176,7 +176,6 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
   emaInit(&azLPF, 1.0f, 3.0f, 1000.0f); // 15 Hz cutoff
 
   emaInit(&raw_alt_LPF, 1.0f, 15.0f, 1000.0f); // PT2, fc = 5 Hz, fs = 100 Hz (dt=0.010s) for raw altitude measurement smoothing
-  // emaInit(&alt_LPF, 2.0f, 1.0f, 1000.0f); // PT2, fc = 5 Hz, fs = 100 Hz (dt=0.010s) for altitude measurement smoothing
 
   float dt;
 
@@ -632,8 +631,8 @@ void PIDtask(void* Parameters) {
 
     // ====================== CONFIG ======================
     const float BASE_THROTTLE = 1000.0f;      // Fixed base in mixer
-    const float MAX_TB        = 500.0f;       // Maximum hover component (50%)
-    const float HOVER_TB      = 500.0f;       // Starting guess - tune this later
+    const float MAX_TB        = 450.0f;       // Maximum hover component (50%)
+    const float HOVER_TB      = 450.0f;       // Starting guess - tune this later
 
     const float KP_VZ = 14.0f;
     const float KI_VZ = 4.0f;
@@ -671,7 +670,6 @@ void PIDtask(void* Parameters) {
     // State machine
     typedef enum {
         DISARMED,
-        ARMING,
         ARMED_IDLE,
         TAKEOFF,
         FLYING
@@ -735,17 +733,25 @@ void PIDtask(void* Parameters) {
         // User Input
         if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
           vz_cmd     = inputList[0]; // [-0.8, 0.8] m/s
-          yawInput   = inputList[1]; // [-90, 90] deg/s but in radians: [-1.57, 1.57] rad/s
-          pitchInput = inputList[2]; // [-30, 30] deg but in radians: [-0.52, 0.52] rad
-          rollInput  = inputList[3]; // [-30, 30] deg but in radians: [-0.52, 0.52] rad
+          yawInput   = inputList[1]; // [-180, 180] deg/s but in radians: [-pi, pi] rad/s
+          pitchInput = inputList[2]; // [-20, 20] deg but in radians: [-] rad
+          rollInput  = inputList[3]; // [-20, 20] deg but in radians: [-] rad
 
           KILL_MOTORS = (inputList[4] != 0.0f);
           E_LAND = (inputList[5] != 0.0f);
+
+          if (E_LAND && !KILL_MOTORS) {
+            // Only override if pilot isn't giving positive throttle
+            if (vz_cmd < -0.1f) {
+              vz_cmd = -0.5f;  // Force descent
+            }
+            // else let pilot's positive throttle override E-landing
+          }
           xSemaphoreGive(nRF24Mutex);
         }
 
         // ====================== ARMING (DJI Style) ======================
-        bool sticksInArmPosition = (vz_cmd < -0.70f) && (fabsf(pitchInput) > 0.50f);
+        bool sticksInArmPosition = (vz_cmd < -0.70f) && (fabsf(pitchInput) > 18.0f * DEG_TO_RAD);
 
         if (flightState == DISARMED) {
             if (sticksInArmPosition) {
@@ -764,36 +770,36 @@ void PIDtask(void* Parameters) {
 
         // ====================== STATE MACHINE ======================
         switch (flightState) {
-            case DISARMED:
-                tb = 0.0f;
-                vz_in.is_flying = 0.0f;
-                break;
+          case DISARMED:
+            tb = 0.0f;
+            vz_in.is_flying = 0.0f;
+            break;
 
-            case ARMED_IDLE:
-                tb = 0.0f;
-                vz_in.is_flying = 0.0f;
-                if (vz_cmd > -30.0f) {
-                    flightState = TAKEOFF;
-                    takeoffRamp = 0.0f;
-                }
-                break;
+          case ARMED_IDLE:
+            tb = 0.0f;
+            vz_in.is_flying = 0.0f;
+            if (vz_cmd > -0.70f) { 
+              flightState = TAKEOFF;
+              takeoffRamp = 0.0f;
+            }
+            break;
 
-            case TAKEOFF:
-                vz_in.is_flying = 1.0f;
-                takeoffRamp += dt * 0.75f;           // ~1.3s ramp
-                if (takeoffRamp > 1.0f) takeoffRamp = 1.0f;
+          case TAKEOFF:
+            vz_in.is_flying = 1.0f;
+            takeoffRamp += dt * 0.75f;           // ~1.3s ramp
+            if (takeoffRamp > 1.0f) takeoffRamp = 1.0f;
 
-                tb = takeoffRamp * MAX_TB;           // ramp 0 → 500
+            tb = takeoffRamp * MAX_TB;           // ramp 0 → 500
 
-                if (takeoffRamp >= 1.0f && altitude > 0.6f && fabsf(velocity_z) < 0.5f) {
-                    flightState = FLYING;
-                }
-                break;
+            if (takeoffRamp >= 1.0f && altitude > 0.6f && fabsf(velocity_z) < 0.5f) {
+              flightState = FLYING;
+            }
+            break;
 
-            case FLYING:
-                vz_in.is_flying = 1.0f;
-                tb = HOVER_TB;                       // Now fixed at 500.0f
-                break;
+          case FLYING:
+            vz_in.is_flying = 1.0f;
+            tb = HOVER_TB;                       // Now fixed at 500.0f
+            break;
         }
 
         // ====================== FILTERING ======================
@@ -826,52 +832,18 @@ void PIDtask(void* Parameters) {
             vz_correction = computeVelocityControlZ(&vz_in, vz_cmdFiltered, velocity_z, dt);
         }
 
-        // float total_throttle = BASE_THROTTLE + tb + vz_correction;
-        float total_throttle = BASE_THROTTLE + tb; // for test rod (attitude control test)
+        float total_throttle = BASE_THROTTLE + tb + vz_correction;
+        // float total_throttle = BASE_THROTTLE + tb; // for test rod (attitude control test)
 
         // Motor Mixer
         if (KILL_MOTORS) {
           resetLyGAPID(&pidRoll); resetLyGAPID(&pidPitch);
           resetLyGAPID(&pidRollRate); resetLyGAPID(&pidPitchRate); resetLyGAPID(&pidYawRate);
-          for (int i = 0; i < 4; i++) motor_cmd[i] = MOTOR_MIN;
-        } else if (E_LAND && flightState != DISARMED){
-          // Only do emergency landing if we're actually flying
-          // ============== EMERGENCY LANDING ==============
-          // Slowly reduce tb (hover component) down to 300 for controlled descent
-          static float descent_target_tb = 300.0f;
-          const float descent_rate = 80.0f;        // How fast tb decreases per second (tune this)
-
-          // Ramp tb down smoothly
-          if (tb > descent_target_tb) {
-            tb -= descent_rate * dt;
-          } else {
-            tb = descent_target_tb;
-          }
-
-          // Disable velocity controller during emergency landing to prevent windup
+          flightState = DISARMED;
+          tb = 0.0f;
           vz_in.is_flying = 0.0f;
-          vz_correction = 0.0f;
-
-          // Use reduced tb + attitude corrections only
-          float total_throttle = BASE_THROTTLE + tb;
-
-          float R_mix = constrainFloat(computeLyGAPID_in(&pidRollRate, roll_rate_setpoint, rollRate, dt), -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
-          float P_mix = constrainFloat(computeLyGAPID_in(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt), -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
-          float Y_mix = constrainFloat(computeLyGAPID_yaw(&pidYawRate, yaw_rate_setpoint, yawRate, dt), -U_MAX_YAW_RATE, U_MAX_YAW_RATE);
-
-          motor_cmd[0] = total_throttle + R_mix + P_mix - Y_mix;
-          motor_cmd[1] = total_throttle - R_mix + P_mix + Y_mix;
-          motor_cmd[2] = total_throttle + R_mix - P_mix + Y_mix;
-          motor_cmd[3] = total_throttle - R_mix - P_mix - Y_mix;
-          
-          // Check if we've landed
-          if (tb <= descent_target_tb && altitude < 0.3f && fabsf(velocity_z) < 0.2f) {
-            // Landed - kill motors and disarm
-            for (int i = 0; i < 4; i++) motor_cmd[i] = MOTOR_MIN;
-            flightState = DISARMED;
-            tb = 0.0f;
-            vz_in.is_flying = 0.0f;
-          }
+          pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = 1.0f;
+          for (int i = 0; i < 4; i++) motor_cmd[i] = MOTOR_MIN;
         } else {
           float R_mix = constrainFloat(computeLyGAPID_in(&pidRollRate, roll_rate_setpoint, rollRate, dt), -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
           float P_mix = constrainFloat(computeLyGAPID_in(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt), -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);

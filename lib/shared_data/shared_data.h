@@ -32,7 +32,7 @@
 #define U_MAX_YAW_RATE      100.0f
 
 // Adaptive PID config: 
-#define GAMMA_B         1.0f
+#define GAMMA_B         100.0f
 #define SIGMA           0.001f
 #define B_SIGN          1.0f
 #define CONTROLLER_MODE 0.0f // 0 = adaptive, 1 = static
@@ -40,7 +40,7 @@
 // Initial P-PID Gains:
 #define P   4.0f
 
-#define KP  45.0f
+#define KP  50.0f
 #define KI  10.0f
 #define KD  0.008f
 

@@ -13,7 +13,7 @@
 #define KI_MAX 30.0f
 #define KI_MIN 0.0f
 
-#define KD_MAX 0.025f // 0.025 last
+#define KD_MAX 0.025f 
 #define KD_MIN 0.008f
 
 typedef struct {
