@@ -23,7 +23,7 @@ float computeVelocityControlZ(VelocityControlZData_t* vz, float v_cmd, float vel
     float error = v_cmd - velocity_z;       // positive = need more upward thrust
 
     // === Improved Integral with better anti-windup ===
-    // vz->integral += error * dt;
+    vz->integral += error * dt;
 
     // Optional: conditional integration (only integrate when not saturated)
     float u_temp = vz->kp * error + vz->ki * vz->integral;
@@ -33,7 +33,7 @@ float computeVelocityControlZ(VelocityControlZData_t* vz, float v_cmd, float vel
     }
 
     // Hard clamp integral (your original)
-    const float integral_limit = 250.0f;
+    const float integral_limit = 100.0f;
     if (vz->integral > integral_limit)  vz->integral = integral_limit;
     if (vz->integral < -integral_limit) vz->integral = -integral_limit;
 
