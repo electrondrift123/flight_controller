@@ -42,7 +42,7 @@ float computeVelocityControlZ(VelocityControlZData_t* vz, float v_cmd, float vel
 
     // Output saturation
     if (u > vz->output_limit)  u = vz->output_limit;
-    if (u < -vz->output_limit) u = -vz->output_limit;
+    if (u < -vz->output_limit) u = - (vz->output_limit * 0.40f); // 60% reduced (-100)
 
     return u;
 }

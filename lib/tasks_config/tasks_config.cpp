@@ -639,11 +639,11 @@ void PIDtask(void* Parameters) {
 
     // ====================== CONFIG ======================
     const float BASE_THROTTLE = 1000.0f;      // Fixed base in mixer
-    const float MAX_TB        = 510.0f;       // Maximum hover component for takeoff only (52%)
+    const float MAX_TB        = 500.0f;       // Maximum hover component for takeoff only (52%)
     const float HOVER_TB      = 480.0f;       // Starting guess - tune this later
 
-    const float KP_VZ = 11.0f;
-    const float KI_VZ = 4.0f;
+    const float KP_VZ = 180.0f;
+    const float KI_VZ = 70.0f;
     const float VZ_OUTPUT_LIMIT = 250.0f;
 
     const float ARM_HOLD_TIME = 2.0f;
@@ -739,7 +739,7 @@ void PIDtask(void* Parameters) {
 
       // User Input
       if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-        vz_cmd     = inputList[0]; // [-0.5, 0.8] m/s
+        vz_cmd     = inputList[0]; // [-0.8, 1.0] m/s
         yawInput   = inputList[1]; // [-180, 180] deg/s but in radians: [-pi, pi] rad/s
         pitchInput = inputList[2]; // [-20, 20] deg but in radians: [-] rad
         rollInput  = inputList[3]; // [-20, 20] deg but in radians: [-] rad
@@ -750,7 +750,7 @@ void PIDtask(void* Parameters) {
         if (E_LAND && !KILL_MOTORS) {
           // Only override if pilot isn't giving positive throttle
           if (vz_cmd < -0.1f) {
-            vz_cmd = -0.5f;  // Force descent
+            vz_cmd = -0.65f;  // Force descent
           }
           // else let pilot's positive throttle override E-landing
         }
@@ -758,7 +758,7 @@ void PIDtask(void* Parameters) {
       }
 
       // ====================== ARMING (DJI Style) ======================
-      bool sticksInArmPosition = (vz_cmd < -0.45f) && (fabsf(pitchInput) > 18.0f * DEG_TO_RAD);
+      bool sticksInArmPosition = (vz_cmd < -0.70f) && (fabsf(pitchInput) > 18.0f * DEG_TO_RAD);
 
       if (flightState == DISARMED) {
         if (sticksInArmPosition) {
@@ -785,7 +785,7 @@ void PIDtask(void* Parameters) {
         case ARMED_IDLE:
           tb = 0.0f;
           vz_in.is_flying = 0.0f;
-          if (vz_cmd > -0.45f) { 
+          if (vz_cmd > -0.70f) { 
             flightState = TAKEOFF;
             takeoffRamp = 0.0f;
           }
@@ -818,7 +818,7 @@ void PIDtask(void* Parameters) {
       rollInputFiltered  = constrainFloat(R_LPF.output, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
       pitchInputFiltered = constrainFloat(P_LPF.output, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
       yawInputFiltered   = constrainFloat(Y_LPF.output, -YAW_MAX, YAW_MAX);
-      vz_cmdFiltered     = T_LPF.output;   // [-0.8,0.8] m/s
+      vz_cmdFiltered     = T_LPF.output;   // [-0.8,1.0] m/s
 
       // Attitude outer loop @ 100 Hz
       outer_loop_counter++;
