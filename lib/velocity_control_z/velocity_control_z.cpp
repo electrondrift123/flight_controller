@@ -33,7 +33,7 @@ float computeVelocityControlZ(VelocityControlZData_t* vz, float v_cmd, float vel
     }
 
     // Hard clamp integral (your original)
-    const float integral_limit = 100.0f;
+    const float integral_limit = 40.0f;
     if (vz->integral > integral_limit)  vz->integral = integral_limit;
     if (vz->integral < -integral_limit) vz->integral = -integral_limit;
 

@@ -33,6 +33,9 @@ EMA_t alt_sp_LPF;
 EMA_t alt_LPF;
 EMA_t raw_alt_LPF;
 
+// voltage monitor
+EMA_t VbLPF;
+
 // kalman filter state for altitude estimation
 KalmanState_t kalmanState;
 

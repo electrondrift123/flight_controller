@@ -95,6 +95,9 @@ extern EMA_t alt_sp_LPF;
 extern EMA_t alt_LPF;
 extern EMA_t raw_alt_LPF;
 
+// voltage monitor
+extern EMA_t VbLPF;
+
 // kalman filter state for altitude estimation
 extern KalmanState_t kalmanState;
 
