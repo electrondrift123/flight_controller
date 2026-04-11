@@ -102,8 +102,8 @@ bool main_rx_init(void){
   radio.openReadingPipe(PIPE_INDEX, address[0]);
 
   // Pre-load the ACK BEFORE startListening
-  int16_t startup_telemetry[5] = {0, 0, 0, 0, 0};
-  radio.writeAckPayload(PIPE_INDEX, startup_telemetry, sizeof(startup_telemetry));
+  // int16_t startup_telemetry[5] = {0, 0, 0, 0, 0};
+  // radio.writeAckPayload(PIPE_INDEX, startup_telemetry, sizeof(startup_telemetry));
 
   radio.startListening();
   // IRQ pin
