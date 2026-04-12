@@ -32,6 +32,9 @@ VelocityControlZData_t vz_in;
 EMA_t alt_sp_LPF;  
 EMA_t alt_LPF;
 EMA_t raw_alt_LPF;
+EMA_t vzLPF;
+
+EMA_t d_filter;
 
 // voltage monitor
 EMA_t VbLPF;

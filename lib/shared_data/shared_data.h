@@ -94,6 +94,9 @@ extern VelocityControlZData_t vz_in; // inner PI controller for altitude hold
 extern EMA_t alt_sp_LPF;  
 extern EMA_t alt_LPF;
 extern EMA_t raw_alt_LPF;
+extern EMA_t vzLPF;
+
+extern EMA_t d_filter;
 
 // voltage monitor
 extern EMA_t VbLPF;

@@ -22,8 +22,7 @@ void init_kalmanAltitude(KalmanState_t *state,
 float kalmanAltitudeUpdate(KalmanState_t *state, float baroAlt, float accD, float dt) {
     if (dt <= 0.0f) return state->x[0];
 
-    float acc_z = (accD - 1.0f) * 9.81f; // poitive vz downward
-    // float acc_z = (1.0f - accD) * 9.81f; // poitive vz upward
+    float acc_z = (accD - 1.0f) * 9.81f; // poitive vz upward
 
     // === Predict (Time Update) ===
     state->x[0] += state->x[1] * dt + 0.5f * acc_z * dt * dt;
@@ -37,8 +36,25 @@ float kalmanAltitudeUpdate(KalmanState_t *state, float baroAlt, float accD, floa
     // Keep symmetry
     state->P[1][0] = state->P[0][1];
 
-    // === Update (Measurement Update) ===
-    float y = baroAlt - state->x[0];           // innovation
+    // // === Update (Measurement Update) ===
+    // float y = baroAlt - state->x[0];           // innovation
+    // float S = state->P[0][0] + state->R_baro;
+    // float K0 = state->P[0][0] / S;
+    // float K1 = state->P[0][1] / S;
+
+    // state->x[0] += K0 * y;
+    // state->x[1] += K1 * y;
+
+    // // Update covariance
+    // float P00 = state->P[0][0];
+    // float P01 = state->P[0][1];
+    // state->P[0][0] = (1.0f - K0) * P00;
+    // state->P[0][1] = (1.0f - K0) * P01;
+    // state->P[1][0] = state->P[0][1];
+    // state->P[1][1] -= K1 * P01;
+
+    // === Correct Update (Measurement Update) ===
+    float y = baroAlt - state->x[0];
     float S = state->P[0][0] + state->R_baro;
     float K0 = state->P[0][0] / S;
     float K1 = state->P[0][1] / S;
@@ -46,13 +62,25 @@ float kalmanAltitudeUpdate(KalmanState_t *state, float baroAlt, float accD, floa
     state->x[0] += K0 * y;
     state->x[1] += K1 * y;
 
-    // Update covariance
-    float P00 = state->P[0][0];
-    float P01 = state->P[0][1];
-    state->P[0][0] = (1.0f - K0) * P00;
-    state->P[0][1] = (1.0f - K0) * P01;
+    // Use temporary variables to prevent using updated values mid-calculation
+    float P00_temp = state->P[0][0];
+    float P01_temp = state->P[0][1];
+
+    state->P[0][0] -= K0 * P00_temp;
+    state->P[0][1] -= K0 * P01_temp;
     state->P[1][0] = state->P[0][1];
-    state->P[1][1] -= K1 * P01;
+    state->P[1][1] -= K1 * P01_temp; // Correct: uses the same P01 used for K1
 
     return state->x[0];
+}
+
+void reset_kalmanAltitude(KalmanState_t *state) {
+    state->x[0] = 0.0f; // Reset altitude to zero
+    state->x[1] = 0.0f; // Reset vertical velocity to zero
+
+    // Reset covariance to initial values (tune if needed)
+    state->P[0][0] = 1.0f;   // high uncertainty in position
+    state->P[0][1] = 0.0f;
+    state->P[1][0] = 0.0f;
+    state->P[1][1] = 1.0f;   // high uncertainty in velocity
 }

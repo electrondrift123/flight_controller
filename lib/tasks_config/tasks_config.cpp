@@ -23,6 +23,7 @@
 #include "Butterworth2ndLPF.h"
 #include "EMA.h"
 #include "Mahony.h"
+#include "calculus.h"
 
 // DEFINE PRIORITY LEVELS (status: working)
 #define PRIORITY_PID_FUSION   1 // 500 Hz -> try prio: 2 (radio task starve)
@@ -175,25 +176,38 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
   emaInit(&ayLPF, 1.0f, 3.0f, 1000.0f); // 15 Hz cutoff
   emaInit(&azLPF, 1.0f, 3.0f, 1000.0f); // 15 Hz cutoff
 
-  emaInit(&raw_alt_LPF, 1.0f, 20.0f, 1000.0f); // PT1, fc = 20 Hz, fs = 100 Hz (dt=0.010s) for raw altitude measurement smoothing
+  emaInit(&raw_alt_LPF, 1.0f, 2.0f, 1000.0f); // PT1, fc = 1 Hz, fs = 1 kHz for raw altitude measurement smoothing
+  emaInit(&vzLPF, 1.0f, 30.0f, 100.0f);
 
   float dt;
 
   static float altSmooth = 0.0f;
 
   // Tune these once (start with these values)
-  const float Q_pos = 0.0033f;   // process noise on position
-  const float Q_vel = 0.0023f;    // process noise on velocity (higher = trust accel more)
-  const float R_baro = 0.08f;    // baro measurement noise (m²) — tune down if you oversample BMP280
+  // const float Q_pos = 0.0033f;   // process noise on position
+  // const float Q_vel = 0.0023f;    // process noise on velocity (higher = trust accel more)
+  // const float R_baro = 0.08f;    // baro measurement noise (m²) — tune down if you oversample BMP280
 
-  // const float Q_pos = 0.0030f;   // process noise on position
-  // const float Q_vel = 0.0010f;    // process noise on velocity (higher = trust accel more)
-  // const float R_baro = 0.01f;    // baro measurement noise (m²) — tune down if you oversample BMP280
+  // better overall measurement (vz still noisy but hit nearly zero but still have high spikes, alt sometimes drifts but can recover)
+  const float Q_pos = 0.013f;   // process noise on position
+  const float Q_vel = 0.08f;    // increase -> lower velocity bias
+  const float R_baro = 0.003f;    // better than 0.08 (faster and more accurate alt)
 
   init_kalmanAltitude(&kalmanState, 0.0f, Q_pos, Q_vel, R_baro); // Q_pos, Q_vel, R_baro - tune these parameters based on your system's noise characteristics
 
+  Derivative_t altitude_derivative;
+  init_derivative(&altitude_derivative);
+
+  static int kalman_counter = 0; // run every 100 Hz
+  const int kalman_interval = 10; // 10 ms = 100 Hz
+
+  float fusedAlt = 0.0f;
+  float velocity_z = 0.0f;
+
   for (;;) {
     dt = intervalTicks * portTICK_PERIOD_MS / 1000.0f; // dt in seconds
+
+    kalman_counter++;
 
     // read the BMP280 sensor
     if (xSemaphoreTake(wireMutex, pdMS_TO_TICKS(1)) == pdTRUE){
@@ -254,11 +268,16 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
     emaUpdate(&raw_alt_LPF, local_altitude); // Update raw altitude LPF
     local_altitude = raw_alt_LPF.output; // Get smoothed altitude for fusion
 
-    float fusedAlt = kalmanAltitudeUpdate(&kalmanState, local_altitude, az, 0.001f); // Kalman filter update for altitude estimation 
+    if (kalman_counter >= kalman_interval) {
+      fusedAlt = kalmanAltitudeUpdate(&kalmanState, local_altitude, az, dt / 10.0f); // Kalman filter update for altitude estimation 
 
-    // also read velocity from Kalman state for future control
-    float vz_bias = -0.5f;
-    float velocity_z = kalmanState.x[1] - vz_bias; // vertical velocity estimate from Kalman filter
+      // also read velocity from Kalman state for future control
+      velocity_z = kalmanState.x[1]; // vertical velocity estimate from Kalman filter
+      emaUpdate(&vzLPF, velocity_z);
+      velocity_z = vzLPF.output; // Get smoothed vertical velocity
+
+      kalman_counter = 0; // reset counter
+    }
 
     // Update shared data: BMP280 altitude
     if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE){
@@ -267,20 +286,20 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       xSemaphoreGive(telemetryMutex);
     }
 
-    // // debug printf
-    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-    //   // Serial.print("Euler: ");
-    //   // Serial.print(madData.roll); Serial.print(", ");
-    //   // Serial.print(madData.pitch); Serial.print(", ");
-    //   // Serial.println(madData.yaw);
+    // debug printf
+    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+      // Serial.print("Euler: ");
+      // Serial.print(madData.roll); Serial.print(", ");
+      // Serial.print(madData.pitch); Serial.print(", ");
+      // Serial.println(madData.yaw);
 
-    //   Serial.print("Vz: "); Serial.print(velocity_z); Serial.print(", ");
-    //   Serial.print("alt: "); Serial.println(fusedAlt);
+      Serial.print("Vz: "); Serial.print(velocity_z); Serial.print(", ");
+      Serial.print("alt: "); Serial.println(fusedAlt);
 
-    //   // Serial.print("Altitude: "); Serial.println(altSmooth);
-    //   // Serial.print(mx); Serial.print(", "); Serial.print(my); Serial.print(", "); Serial.println(mz);
-    //   xSemaphoreGive(serialMutex);
-    // }
+      // Serial.print("Altitude: "); Serial.println(altSmooth);
+      // Serial.print(mx); Serial.print(", "); Serial.print(my); Serial.print(", "); Serial.println(mz);
+      xSemaphoreGive(serialMutex);
+    }
 
     vTaskDelayUntil(&lastWakeTime, intervalTicks); 
   }
@@ -299,6 +318,10 @@ void PIDtask(void* Parameters) {
   const float KP_VZ = 180.0f;
   const float KI_VZ = 50.0f;
   const float VZ_OUTPUT_LIMIT = 250.0f;
+
+  const float KP_Z = 180.0f;
+  const float KI_Z = 50.0f;
+  const float Z_OUTPUT_LIMIT = 200.0f;
 
   const float ARM_HOLD_TIME = 2.5f;
 
@@ -329,6 +352,14 @@ void PIDtask(void* Parameters) {
   emaInit(&Y_LPF, 1.0f, 20.0f, 500.0f);
   emaInit(&T_LPF, 1.0f, 12.0f, 500.0f);
 
+  // vertical controller mode
+  typedef enum {
+    VELOCITY_CONTROL,
+    ALTITUDE_CONTROL
+  } VerticalControlMode_t;
+
+  VerticalControlMode_t vertical_mode = ALTITUDE_CONTROL;
+
   // State machine
   typedef enum {
     DISARMED,
@@ -341,12 +372,17 @@ void PIDtask(void* Parameters) {
   float armingTimer = 0.0f;
   float takeoffRamp = 0.0f;
 
+  float vz_correction = 0.0f;
   float tb = 0.0f;                        // 0 → 500 (this is your hover component)
   float Vb = 0.0; // 3s lipo: [11.4V, 12.6V]
 
   float motor_cmd[4] = {MOTOR_MIN, MOTOR_MIN, MOTOR_MIN, MOTOR_MIN};
 
-  initVelocityControlZ(&vz_in, KP_VZ, KI_VZ, VZ_OUTPUT_LIMIT);
+  if (vertical_mode == VELOCITY_CONTROL){
+    initVelocityControlZ(&vz_in, KP_VZ, KI_VZ, VZ_OUTPUT_LIMIT);
+  } else if (vertical_mode == ALTITUDE_CONTROL){
+    initAltitudeControl(&vc_z, KP_Z, KI_Z, Z_OUTPUT_LIMIT);
+  }
 
   float roll_rate_setpoint = 0.0f;
   float pitch_rate_setpoint = 0.0f;
@@ -419,10 +455,17 @@ void PIDtask(void* Parameters) {
     if (E_LAND && !KILL_MOTORS) {
       // Force descent unless pilot is actively climbing
       if (vz_cmd < 0.1f) {  // Not commanding significant climb
-        vz_cmd = -0.65f;   // Safe descent rate
+        vz_cmd = -0.5f;   // Safe descent rate (maybe)
       }
       // If pilot gives positive vz_cmd, let them override
     }
+
+    // if (flightState == DISARMED || flightState == ARMED_IDLE) {
+    //   altitude = 0.0f;
+    //   velocity_z = 0.0f;
+    //   // Also reset Kalman alt & velocity state if possible (also the P matrix)
+    //   reset_kalmanAltitude(&kalmanState); // Reset Kalman filter state
+    // }
 
     // ====================== ARMING (DJI Style) ======================
     bool sticksInArmPosition = (vz_cmd < -0.70f) && (fabsf(pitchInput) > 18.0f * DEG_TO_RAD);
@@ -472,8 +515,21 @@ void PIDtask(void* Parameters) {
 
       case FLYING:
         vz_in.is_flying = 1.0f;
+        // ====================== GROUND EFFECT COMPENSATION (E-LAND) ======================
+        const float K_GE = 600.0f;  // Tune this (start 80-120)
+        const float GE_THRESHOLD = 1.4f;
+        const float R_PROP = 0.127f;  // 1045-inch prop radius
+        float ge_comp = 0.0f;
+
+        if (altitude < GE_THRESHOLD && E_LAND) {
+          if (altitude < 0.30f) altitude = 0.30f; // prevent extreme compensation at very low altitudes
+          float z = fmaxf(altitude, 0.15f);
+          ge_comp = K_GE * (R_PROP / z) * (R_PROP / z);
+        }
+
         static float Vb_hover_gain = 40.0f;
-        tb = HOVER_TB + Vb_hover_gain * (12.6f - Vb); // voltage sag compensation     
+        // tb = HOVER_TB + Vb_hover_gain * (12.6f - Vb) - ge_comp; // voltage sag compensation     
+        tb = HOVER_TB;
         break;
     }
 
@@ -491,6 +547,10 @@ void PIDtask(void* Parameters) {
     // Attitude outer loop @ 100 Hz
     outer_loop_counter++;
     if (outer_loop_counter >= 5) {
+      // Vertical Velocity Controller
+      if ((flightState == TAKEOFF || flightState == FLYING) && vertical_mode == ALTITUDE_CONTROL) {
+        vz_correction = computeVelocityControlZ(&vz_in, vz_cmdFiltered, velocity_z, dt);
+      }
       roll_rate_setpoint  = computeLyGAPID_out(&pidRoll,  rollInputFiltered,  roll,  0.01f);
       pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, 0.01f);
       outer_loop_counter = 0;
@@ -501,14 +561,14 @@ void PIDtask(void* Parameters) {
     bool isLanded = (flightState == DISARMED || flightState == ARMED_IDLE);
     pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = isLanded ? 1.0f : 0.0f;
 
-    // Vertical Velocity Controller
-    float vz_correction = 0.0f;
-    if (flightState == TAKEOFF || flightState == FLYING) {
-      vz_correction = computeVelocityControlZ(&vz_in, vz_cmdFiltered, velocity_z, dt);
-    }
-
     float total_throttle = BASE_THROTTLE + tb + vz_correction;
     // float total_throttle = BASE_THROTTLE + tb; // for test rod (attitude control test)
+    
+    // Vertical Velocity Controller
+    if ((flightState == TAKEOFF || flightState == FLYING) && vertical_mode == VELOCITY_CONTROL) {
+      vz_correction = computeVelocityControlZ(&vz_in, vz_cmdFiltered, velocity_z, dt);
+    }
+    total_throttle = constrainFloat(total_throttle, 1400.0f, 1750.0f);
 
     // Motor Mixer
     if (KILL_MOTORS) {
@@ -741,8 +801,10 @@ void freeRTOS_tasks_init(void){
 
 //// TODO: 
 // - [y] test rod 
-// - [x] fix the radio connectivity issue
-// - [x] real test flight (tethered / assisted) 
+// - [y] fix the radio connectivity issue
+// - [y] real test flight (assisted) 
+// - [x] fix landing issue
+// - [x] real test flight (tethered) 
 // - [x] free flight
 // - [x] test flight with payload (varying/sloshing)
 

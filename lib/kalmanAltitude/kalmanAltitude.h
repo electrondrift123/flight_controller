@@ -19,5 +19,6 @@ void init_kalmanAltitude(KalmanState_t *state,
                          float R_baro);
 
 float kalmanAltitudeUpdate(KalmanState_t *state, float baroAlt, float accD, float dt);
+void reset_kalmanAltitude(KalmanState_t *state);
 
 #endif
