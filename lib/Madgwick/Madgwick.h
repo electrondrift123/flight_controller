@@ -38,4 +38,7 @@ void MadgwickFilterUpdate(MadgwickData_t* filterData,
 // Convert quaternion to Euler angles (degrees)
 void MadgwickGetEuler(MadgwickData_t* filterData);
 
+// get the az world
+float getAzWorld(MadgwickData_t* filterData);
+
 #endif // MADGWICK_H

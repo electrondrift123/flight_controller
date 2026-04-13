@@ -181,3 +181,17 @@ void MadgwickGetEuler(MadgwickData_t* filterData) {
                              1.0f - 2.0f * (q2*q2 + q3*q3)) * 57.2958f;
 }
 
+float getAzWorld(MadgwickData_t* filterData) {
+    float q0 = filterData->q0;
+    float q1 = filterData->q1;
+    float q2 = filterData->q2;
+    float q3 = filterData->q3;
+
+    // For NED: world gravity vector is [0, 0, 1]
+    // The Z component of gravity in sensor frame is:
+    float az_world = 2.0f * (q1*q3 - q0*q2);
+    
+    // This gives you the component of world Z in the sensor's Z direction
+    // For NED with level sensor, this should be ~1.0f
+    return az_world;
+}

@@ -313,7 +313,7 @@ void PIDtask(void* Parameters) {
   const float MAX_TB        = 555.0f;       // Maximum hover component for takeoff only (was 50%)
   const float HOVER_TB      = 555.0f;       // Starting guess - tune this later
 
-  const float KP_VZ = 180.0f;
+  const float KP_VZ = 160.0f; // was 180
   const float KI_VZ = 50.0f;
   const float VZ_OUTPUT_LIMIT = 250.0f;
 
@@ -356,7 +356,7 @@ void PIDtask(void* Parameters) {
     ALTITUDE_CONTROL
   } VerticalControlMode_t;
 
-  VerticalControlMode_t vertical_mode = VELOCITY_CONTROL;
+  VerticalControlMode_t vertical_mode = VELOCITY_CONTROL; // @ 100 Hz
 
   // State machine
   typedef enum {
