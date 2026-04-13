@@ -176,22 +176,17 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
   emaInit(&ayLPF, 1.0f, 3.0f, 1000.0f); // 15 Hz cutoff
   emaInit(&azLPF, 1.0f, 3.0f, 1000.0f); // 15 Hz cutoff
 
-  emaInit(&raw_alt_LPF, 1.0f, 2.0f, 1000.0f); // PT1, fc = 1 Hz, fs = 1 kHz for raw altitude measurement smoothing
-  emaInit(&vzLPF, 1.0f, 30.0f, 100.0f);
+  emaInit(&raw_alt_LPF, 1.0f, 1.0f, 1000.0f); // PT1, fc = 1 Hz, fs = 1 kHz for raw altitude measurement smoothing
+  emaInit(&vzLPF, 1.0f, 2.0f, 100.0f);
 
   float dt;
 
   static float altSmooth = 0.0f;
 
-  // Tune these once (start with these values)
-  // const float Q_pos = 0.0033f;   // process noise on position
-  // const float Q_vel = 0.0023f;    // process noise on velocity (higher = trust accel more)
-  // const float R_baro = 0.08f;    // baro measurement noise (m²) — tune down if you oversample BMP280
-
-  // better overall measurement (vz still noisy but hit nearly zero but still have high spikes, alt sometimes drifts but can recover)
-  const float Q_pos = 0.013f;   // process noise on position
-  const float Q_vel = 0.08f;    // increase -> lower velocity bias
-  const float R_baro = 0.003f;    // better than 0.08 (faster and more accurate alt)
+  // new tuning 
+  const float Q_pos = 0.0013f;   // process noise on position (was 0.013)
+  const float Q_vel = 0.03f;    // increase -> lower velocity bias
+  const float R_baro = 0.009f;    // better than 0.08 (faster and more accurate alt)
 
   init_kalmanAltitude(&kalmanState, 0.0f, Q_pos, Q_vel, R_baro); // Q_pos, Q_vel, R_baro - tune these parameters based on your system's noise characteristics
 
@@ -268,13 +263,16 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
     emaUpdate(&raw_alt_LPF, local_altitude); // Update raw altitude LPF
     local_altitude = raw_alt_LPF.output; // Get smoothed altitude for fusion
 
-    if (kalman_counter >= kalman_interval) {
-      fusedAlt = kalmanAltitudeUpdate(&kalmanState, local_altitude, az, dt / 10.0f); // Kalman filter update for altitude estimation 
+    if (kalman_counter >= kalman_interval) { // 100 Hz
+      fusedAlt = kalmanAltitudeUpdate(&kalmanState, local_altitude, az, dt * kalman_interval); // Kalman filter update for altitude estimation 
+      if (fabsf(fusedAlt) < 0.20f) fusedAlt = 0.0f; // prevent small noise around zero altitude
 
       // also read velocity from Kalman state for future control
       velocity_z = kalmanState.x[1]; // vertical velocity estimate from Kalman filter
       emaUpdate(&vzLPF, velocity_z);
       velocity_z = vzLPF.output; // Get smoothed vertical velocity
+
+      if (fabsf(velocity_z) < 0.20f) velocity_z = 0.0f; // deadband to prevent jitter around zero velocity
 
       kalman_counter = 0; // reset counter
     }
@@ -358,7 +356,7 @@ void PIDtask(void* Parameters) {
     ALTITUDE_CONTROL
   } VerticalControlMode_t;
 
-  VerticalControlMode_t vertical_mode = ALTITUDE_CONTROL;
+  VerticalControlMode_t vertical_mode = VELOCITY_CONTROL;
 
   // State machine
   typedef enum {
@@ -460,12 +458,18 @@ void PIDtask(void* Parameters) {
       // If pilot gives positive vz_cmd, let them override
     }
 
-    // if (flightState == DISARMED || flightState == ARMED_IDLE) {
-    //   altitude = 0.0f;
-    //   velocity_z = 0.0f;
-    //   // Also reset Kalman alt & velocity state if possible (also the P matrix)
-    //   reset_kalmanAltitude(&kalmanState); // Reset Kalman filter state
-    // }
+    if (flightState == DISARMED || flightState == ARMED_IDLE) { // is this the cause?
+      altitude = 0.0f;
+      velocity_z = 0.0f;
+      // Also reset Kalman alt & velocity state if possible (also the P matrix)
+      reset_kalmanAltitude(&kalmanState); // Reset Kalman filter state
+    }
+
+    if ((flightState == TAKEOFF || flightState == FLYING) && 
+      (fabsf(roll) > MAX_SAFE_ANGLE_RAD || fabsf(pitch) > MAX_SAFE_ANGLE_RAD)) {
+      KILL_MOTORS = true;
+      flightState = DISARMED;
+    }
 
     // ====================== ARMING (DJI Style) ======================
     bool sticksInArmPosition = (vz_cmd < -0.70f) && (fabsf(pitchInput) > 18.0f * DEG_TO_RAD);
@@ -516,20 +520,19 @@ void PIDtask(void* Parameters) {
       case FLYING:
         vz_in.is_flying = 1.0f;
         // ====================== GROUND EFFECT COMPENSATION (E-LAND) ======================
-        const float K_GE = 600.0f;  // Tune this (start 80-120)
+        const float K_GE = 200.0f;  // Tune this (start 80-120)
         const float GE_THRESHOLD = 1.4f;
         const float R_PROP = 0.127f;  // 1045-inch prop radius
         float ge_comp = 0.0f;
 
         if (altitude < GE_THRESHOLD && E_LAND) {
-          if (altitude < 0.30f) altitude = 0.30f; // prevent extreme compensation at very low altitudes
-          float z = fmaxf(altitude, 0.15f);
+          float z = altitude; // distance from ground in meters
+          if (z < 0.3) z = 0.3; // prevent extreme compensation when very close to ground
           ge_comp = K_GE * (R_PROP / z) * (R_PROP / z);
         }
 
         static float Vb_hover_gain = 40.0f;
-        // tb = HOVER_TB + Vb_hover_gain * (12.6f - Vb) - ge_comp; // voltage sag compensation     
-        tb = HOVER_TB;
+        tb = HOVER_TB + Vb_hover_gain * (12.6f - Vb) - ge_comp; // voltage sag compensation     
         break;
     }
 
@@ -548,7 +551,7 @@ void PIDtask(void* Parameters) {
     outer_loop_counter++;
     if (outer_loop_counter >= 5) {
       // Vertical Velocity Controller
-      if ((flightState == TAKEOFF || flightState == FLYING) && vertical_mode == ALTITUDE_CONTROL) {
+      if ((flightState == TAKEOFF || flightState == FLYING) && vertical_mode == VELOCITY_CONTROL) {
         vz_correction = computeVelocityControlZ(&vz_in, vz_cmdFiltered, velocity_z, dt);
       }
       roll_rate_setpoint  = computeLyGAPID_out(&pidRoll,  rollInputFiltered,  roll,  0.01f);
@@ -562,18 +565,18 @@ void PIDtask(void* Parameters) {
     pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = isLanded ? 1.0f : 0.0f;
 
     float total_throttle = BASE_THROTTLE + tb + vz_correction;
-    // float total_throttle = BASE_THROTTLE + tb; // for test rod (attitude control test)
-    
-    // Vertical Velocity Controller
-    if ((flightState == TAKEOFF || flightState == FLYING) && vertical_mode == VELOCITY_CONTROL) {
-      vz_correction = computeVelocityControlZ(&vz_in, vz_cmdFiltered, velocity_z, dt);
+
+    // Apply appropriate limits per state
+    if (flightState == TAKEOFF || flightState == FLYING) {
+      total_throttle = constrainFloat(total_throttle, 1450.0f, 1750.0f);
     }
-    total_throttle = constrainFloat(total_throttle, 1400.0f, 1750.0f);
+    // DISARMED and ARMED_IDLE handle their own motor values directly
 
     // Motor Mixer
     if (KILL_MOTORS) {
       resetLyGAPID(&pidRoll); resetLyGAPID(&pidPitch);
       resetLyGAPID(&pidRollRate); resetLyGAPID(&pidPitchRate); resetLyGAPID(&pidYawRate);
+      reset_kalmanAltitude(&kalmanState);
       flightState = DISARMED;
       tb = 0.0f;
       vz_in.is_flying = 0.0f;
@@ -633,7 +636,7 @@ void RXtask(void* Parameters){
             // Process incoming commands (scaling/clamping)
             float Tcmd = (float)rx_load[0] / 100.0f; // Expected in the range [-80, 80] -> [-0.8, 0.8] m/s
             float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD; // [-90 deg/s, 90 deg/s]
-            float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD;
+            float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
             float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
             float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
             if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {

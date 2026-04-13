@@ -32,23 +32,26 @@
 #define U_MAX_YAW_RATE      100.0f
 
 // Adaptive PID config: 
-#define GAMMA_B         100.0f
+#define GAMMA_B         0.001f
 #define SIGMA           0.001f
 #define B_SIGN          1.0f
 #define CONTROLLER_MODE 0.0f // 0 = adaptive, 1 = static
 
 // Initial P-PID Gains:
-#define P   4.0f
+#define P   3.0f
 
 #define KP  50.0f
-#define KI  10.0f
-#define KD  0.008f
+#define KI  15.0f
+#define KD  0.005f
 
 // MAX commands in float: 
 #define THROTTLE_MAX 100.0f // throttle is now [-0.8, 0.8] m/s cmd velocty z 
 #define THROTTLE_MIN -100.0f
 #define YAW_MAX             PI * 2.0f   // 360 deg/s max cmd
 #define PITCH_ROLL_MAX      PI / 6.0f   // 30 deg max cmd
+
+// failsafe (extreme tilt) -> kill motors
+#define MAX_SAFE_ANGLE_RAD 80.0f * DEG_TO_RAD
 
 // Global shared sensor data
 extern mpu6050Data_t mpuData;

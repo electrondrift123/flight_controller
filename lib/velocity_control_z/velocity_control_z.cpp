@@ -22,6 +22,11 @@ float computeVelocityControlZ(VelocityControlZData_t* vz, float v_cmd, float vel
 
     float error = v_cmd - velocity_z;       // positive = need more upward thrust
 
+    float deadband = 0.15f; // 15 cm/s deadband
+    if (fabs(error) < deadband) { // deadband to prevent jitter around zero velocity
+        error = 0.0f;
+    }
+
     // === Improved Integral with better anti-windup ===
     vz->integral += error * dt;
 

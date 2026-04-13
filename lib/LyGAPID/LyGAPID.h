@@ -3,18 +3,19 @@
 
 #include <Arduino.h>
 
-#define KP_OUT_MAX 10.0f
+// empirical known good static P-PID gains: 3, 50, 15, 0.005
+
+#define KP_OUT_MAX 4.0f // was 6.0f
 #define KP_OUT_MIN 3.0f
 
-// #define KP_MAX 160.0f
-#define KP_MAX 60.0f
-#define KP_MIN 40.0f
+#define KP_MAX 60.0f // was 60.0f
+#define KP_MIN 50.0f
 
 #define KI_MAX 30.0f
-#define KI_MIN 0.0f
+#define KI_MIN 15.0f // maybe try 10 later
 
 #define KD_MAX 0.025f 
-#define KD_MIN 0.008f
+#define KD_MIN 0.005f
 
 typedef struct {
     float Kp, Ki, Kd;
