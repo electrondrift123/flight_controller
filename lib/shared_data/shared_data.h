@@ -35,7 +35,7 @@
 #define GAMMA_B         0.001f
 #define SIGMA           0.001f
 #define B_SIGN          1.0f
-#define CONTROLLER_MODE 0.0f // 0 = adaptive, 1 = static
+#define CONTROLLER_MODE 1.0f // 0 = adaptive, 1 = static
 
 // Initial P-PID Gains:
 #define P   3.0f
@@ -100,6 +100,8 @@ extern EMA_t raw_alt_LPF;
 extern EMA_t vzLPF;
 
 extern EMA_t d_filter;
+
+extern EMA_t azWorldLPF;
 
 // voltage monitor
 extern EMA_t VbLPF;

@@ -36,6 +36,8 @@ EMA_t vzLPF;
 
 EMA_t d_filter;
 
+EMA_t azWorldLPF;
+
 // voltage monitor
 EMA_t VbLPF;
 

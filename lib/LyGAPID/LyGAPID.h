@@ -6,7 +6,7 @@
 // empirical known good static P-PID gains: 3, 50, 15, 0.005 (Static PID v0)
 // LyGAPID v0 Flying: Kpo [3,4], Kp [50, 60], Ki [15, 30], Kd [0.005, 0.025], gamma = sigma = 0.001  (LyGAPID v0 <= Static PID v0)
 
-#define KP_OUT_MAX 6.0f // was 4.0f
+#define KP_OUT_MAX 3.10f // was 6.0f
 #define KP_OUT_MIN 3.0f
 
 #define KP_MAX 60.0f // was 60.0f

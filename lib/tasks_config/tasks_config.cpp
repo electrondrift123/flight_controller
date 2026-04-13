@@ -177,18 +177,25 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
   emaInit(&azLPF, 1.0f, 3.0f, 1000.0f); // 15 Hz cutoff
 
   emaInit(&raw_alt_LPF, 1.0f, 1.0f, 1000.0f); // PT1, fc = 1 Hz, fs = 1 kHz for raw altitude measurement smoothing
-  emaInit(&vzLPF, 1.0f, 2.0f, 100.0f);
+  emaInit(&vzLPF, 1.0f, 10.0f, 100.0f);
 
   float dt;
 
   static float altSmooth = 0.0f;
 
-  // new tuning 
-  const float Q_pos = 0.0013f;   // process noise on position (was 0.013)
-  const float Q_vel = 0.03f;    // increase -> lower velocity bias
-  const float R_baro = 0.009f;    // better than 0.08 (faster and more accurate alt)
+  // // old working tuning (not true az)
+  // const float Q_pos = 0.0013f;   // process noise on position (was 0.013)
+  // const float Q_vel = 0.03f;    // increase -> lower velocity bias
+  // const float R_baro = 0.009f;    // better than 0.08 (faster and more accurate alt)
 
-  init_kalmanAltitude(&kalmanState, 0.0f, Q_pos, Q_vel, R_baro); // Q_pos, Q_vel, R_baro - tune these parameters based on your system's noise characteristics
+  // // new tuning (true az)
+  // const float Q_pos = 0.0013f;   // process noise on position (was 0.013)
+  // const float Q_vel = 0.005f;    // increase -> lower velocity bias
+  // const float R_baro = 0.012f;    // better than 0.08 (faster and more accurate alt)
+
+  // init_kalmanAltitude(&kalmanState, 0.0f, Q_pos, Q_vel, R_baro); // Q_pos, Q_vel, R_baro - tune these parameters based on your system's noise characteristics
+
+  kalman_init(&kalmanState); // Initialize Kalman filter state
 
   Derivative_t altitude_derivative;
   init_derivative(&altitude_derivative);
@@ -198,6 +205,9 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
 
   float fusedAlt = 0.0f;
   float velocity_z = 0.0f;
+
+  float az_world = 0.0f; // in g units
+  emaInit(&azWorldLPF, 1.0f, 30.0f, 1000.0f); // PT1 for vertical acceleration in world frame, fc = 2 Hz, fs = 1 kHz (for Kalman fusion)
 
   for (;;) {
     dt = intervalTicks * portTICK_PERIOD_MS / 1000.0f; // dt in seconds
@@ -256,6 +266,9 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       MadgwickSensorList[6] = mx; // Mag X
       MadgwickSensorList[7] = my; // Mag Y
       MadgwickSensorList[8] = mz; // Mag Z
+
+      az_world = getTrueAz(&madData, az);  // get vertical acceleration in world frame (NED, so positive down) in g units
+
       xSemaphoreGive(madgwickMutex);
     }
 
@@ -263,15 +276,23 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
     emaUpdate(&raw_alt_LPF, local_altitude); // Update raw altitude LPF
     local_altitude = raw_alt_LPF.output; // Get smoothed altitude for fusion
 
+    emaUpdate(&azWorldLPF, az_world); // LPF for vertical acceleration in world frame
+
     if (kalman_counter >= kalman_interval) { // 100 Hz
-      fusedAlt = kalmanAltitudeUpdate(&kalmanState, local_altitude, az, dt * kalman_interval); // Kalman filter update for altitude estimation 
-      if (fabsf(fusedAlt) < 0.20f) fusedAlt = 0.0f; // prevent small noise around zero altitude
+      float az_true_f = azWorldLPF.output; // Get smoothed vertical acceleration in world frame for fusion
+      az_true_f = (az_true_f - 1.0f) * 9.81f; 
+      // az_true_f = constrainFloat(az_true_f, -10.0f, 10.0f); // constrain to reasonable range (tune if needed)
+      // fusedAlt = kalmanAltitudeUpdate(&kalmanState, local_altitude, az_world_filtered, dt * kalman_interval); // Kalman filter update for altitude estimation
+      kalman_update(&kalmanState, local_altitude, az_true_f, dt * kalman_interval); // Kalman filter update for altitude estimation
+      fusedAlt = kalmanState.S[0]; // Get altitude estimate from Kalman filter
+      velocity_z = kalmanState.S[1]; // Get vertical velocity estimate from Kalman filter
 
       // also read velocity from Kalman state for future control
-      velocity_z = kalmanState.x[1]; // vertical velocity estimate from Kalman filter
+      // velocity_z = kalmanState.x[1]; // vertical velocity estimate from Kalman filter
       emaUpdate(&vzLPF, velocity_z);
       velocity_z = vzLPF.output; // Get smoothed vertical velocity
 
+      if (fabsf(fusedAlt) < 0.15f) fusedAlt = 0.0f; // prevent small noise around zero altitude
       if (fabsf(velocity_z) < 0.20f) velocity_z = 0.0f; // deadband to prevent jitter around zero velocity
 
       kalman_counter = 0; // reset counter
@@ -294,7 +315,8 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       Serial.print("Vz: "); Serial.print(velocity_z); Serial.print(", ");
       Serial.print("alt: "); Serial.println(fusedAlt);
 
-      // Serial.print("Altitude: "); Serial.println(altSmooth);
+      // Serial.println(az_world); // 1g at ground, positive upward
+
       // Serial.print(mx); Serial.print(", "); Serial.print(my); Serial.print(", "); Serial.println(mz);
       xSemaphoreGive(serialMutex);
     }
@@ -310,16 +332,12 @@ void PIDtask(void* Parameters) {
 
   // ====================== CONFIG ======================
   const float BASE_THROTTLE = 1000.0f;      // Fixed base in mixer
-  const float MAX_TB        = 555.0f;       // Maximum hover component for takeoff only (was 50%)
-  const float HOVER_TB      = 555.0f;       // Starting guess - tune this later
+  const float MAX_TB        = 520.0f;       // Maximum hover component for takeoff only (was 50%)
+  const float HOVER_TB      = 520.0f;       // Starting guess - tune this later
 
   const float KP_VZ = 160.0f; // was 180
   const float KI_VZ = 50.0f;
   const float VZ_OUTPUT_LIMIT = 250.0f;
-
-  const float KP_Z = 180.0f;
-  const float KI_Z = 50.0f;
-  const float Z_OUTPUT_LIMIT = 200.0f;
 
   const float ARM_HOLD_TIME = 2.5f;
 
@@ -330,7 +348,7 @@ void PIDtask(void* Parameters) {
   bool E_LAND = false; // Emergency Landing flag if signal is loss
 
   // ====================== VARIABLES ======================
-  float vz_cmd = 0.0f;                    // Raw stick [-80,80]
+  float vz_cmd = 0.0f;                    // Raw stick [-80,100]
   float vz_cmdFiltered = 0.0f;            // in m/s
   float velocity_z = 0.0f;
   float altitude = 0.0f;
@@ -376,11 +394,7 @@ void PIDtask(void* Parameters) {
 
   float motor_cmd[4] = {MOTOR_MIN, MOTOR_MIN, MOTOR_MIN, MOTOR_MIN};
 
-  if (vertical_mode == VELOCITY_CONTROL){
-    initVelocityControlZ(&vz_in, KP_VZ, KI_VZ, VZ_OUTPUT_LIMIT);
-  } else if (vertical_mode == ALTITUDE_CONTROL){
-    initAltitudeControl(&vc_z, KP_Z, KI_Z, Z_OUTPUT_LIMIT);
-  }
+  initVelocityControlZ(&vz_in, KP_VZ, KI_VZ, VZ_OUTPUT_LIMIT);
 
   float roll_rate_setpoint = 0.0f;
   float pitch_rate_setpoint = 0.0f;
@@ -458,12 +472,13 @@ void PIDtask(void* Parameters) {
       // If pilot gives positive vz_cmd, let them override
     }
 
-    if (flightState == DISARMED || flightState == ARMED_IDLE) { // is this the cause?
-      altitude = 0.0f;
-      velocity_z = 0.0f;
-      // Also reset Kalman alt & velocity state if possible (also the P matrix)
-      reset_kalmanAltitude(&kalmanState); // Reset Kalman filter state
-    }
+    // if (flightState == DISARMED || flightState == ARMED_IDLE) { 
+    //   altitude = 0.0f;
+    //   velocity_z = 0.0f;
+    //   // Also reset Kalman alt & velocity state if possible (also the P matrix)
+    //   // reset_kalmanAltitude(&kalmanState); // Reset Kalman filter state
+    //   kalman_reset(&kalmanState);
+    // }
 
     if ((flightState == TAKEOFF || flightState == FLYING) && 
       (fabsf(roll) > MAX_SAFE_ANGLE_RAD || fabsf(pitch) > MAX_SAFE_ANGLE_RAD)) {
@@ -576,7 +591,8 @@ void PIDtask(void* Parameters) {
     if (KILL_MOTORS) {
       resetLyGAPID(&pidRoll); resetLyGAPID(&pidPitch);
       resetLyGAPID(&pidRollRate); resetLyGAPID(&pidPitchRate); resetLyGAPID(&pidYawRate);
-      reset_kalmanAltitude(&kalmanState);
+      // reset_kalmanAltitude(&kalmanState);
+      kalman_reset(&kalmanState);
       flightState = DISARMED;
       tb = 0.0f;
       vz_in.is_flying = 0.0f;
