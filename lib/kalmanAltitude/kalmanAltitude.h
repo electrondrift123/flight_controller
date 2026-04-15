@@ -22,8 +22,8 @@
 // void reset_kalmanAltitude(KalmanState_t *state);
 
 typedef struct {
-    float S[2];        // State: [altitude, velocity]
-    float P[2][2];     // Covariance matrix (2x2)
+    float S[3];        // State: [altitude, velocity, accel bias]
+    float P[3][3];     // Covariance matrix (3x3)
 } KalmanState_t;
 
 void kalman_init(KalmanState_t* state);

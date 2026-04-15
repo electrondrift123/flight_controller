@@ -87,100 +87,115 @@
 
 
 void kalman_init(KalmanState_t* state) {
-    state->S[0] = 0.0f;
-    state->S[1] = 0.0f;
-    memset(state->P, 0, sizeof(state->P));  // probably not good
+    state->S[0] = 0.0f;  // position
+    state->S[1] = 0.0f;  // velocity
+    state->S[2] = -0.30f;  // accel bias
+    memset(state->P, 0, sizeof(state->P));
 }
 
 void kalman_reset(KalmanState_t* state) {
     state->S[0] = 0.0f;
     state->S[1] = 0.0f;
+    state->S[2] = -0.30f;
     memset(state->P, 0, sizeof(state->P));
 }
 
 void kalman_update(KalmanState_t* state, float alt_raw, float az, float dt) {
-    if (dt <= 0.0f) {
-        return;  // prevent division-by-zero or crazy behavior
-    }
+    if (dt <= 0.0f) return;
 
-    // === HANDLE INITIAL / RESET STATE (prevents wild velocity swings at startup) ===
-    // If P is still zero (from init/reset), give the filter realistic starting uncertainty.
-    // Large velocity uncertainty lets it settle very quickly without crazy oscillations.
-    if (state->P[0][0] < 1e-6f && state->P[1][1] < 1e-6f) {
-        state->P[0][0] = 100.0f * 100.0f;   // ±100 m on altitude (we don't care much about alt)
-        state->P[1][1] = 40.0f * 40.0f;     // ±20 m/s on velocity — allows fast settling
+    // === INITIAL / RESET ===
+    if (state->P[0][0] < 1e-6f && state->P[1][1] < 1e-6f && state->P[2][2] < 1e-6f) {
+        state->P[0][0] = 1.0f;
+        state->P[1][1] = 1.0f;
+        state->P[2][2] = 0.1f;
         state->P[0][1] = state->P[1][0] = 0.0f;
+        state->P[0][2] = state->P[2][0] = 0.0f;
+        state->P[1][2] = state->P[2][1] = 0.0f;
     }
 
-    // === 1. STATE PREDICTION (position + velocity driven by measured acceleration) ===
-    float S_pred[2];
-    S_pred[0] = state->S[0] + state->S[1] * dt + 0.5f * dt * dt * az;
-    S_pred[1] = state->S[1] + dt * az;
+    // === 1. STATE PREDICTION ===
+    float az_corrected = az - state->S[2];
+    
+    float S_pred[3];
+    S_pred[0] = state->S[0] + state->S[1] * dt + 0.5f * dt * dt * az_corrected;
+    S_pred[1] = state->S[1] + dt * az_corrected;
+    S_pred[2] = state->S[2];
 
-    // === 2. COVARIANCE PREDICTION ===
-    // Process noise is now much smaller and tunable — this is the key to responsive + low-noise velocity
-    float G[2] = {0.5f * dt * dt, dt};
-    float accel_noise_std = 0.2f;           // <<< TUNE THIS (0.3–1.0 range is typical)
-                                            // Lower value = trust IMU accel more → faster response, smoother velocity
-                                            // Higher value = trust baro more → slower response, may add noise
-    float q = accel_noise_std * accel_noise_std;
-
-    float Q[2][2] = {
-        {G[0] * G[0] * q, G[0] * G[1] * q},
-        {G[1] * G[0] * q, G[1] * G[1] * q}
+    // === 2. SIMPLIFIED COVARIANCE PREDICTION (numerically stable) ===
+    float dt2 = dt * dt;
+    float dt3 = dt2 * dt;
+    float dt4 = dt2 * dt2;
+    
+    // Process noise
+    float q_accel = 0.1f;      // Acceleration process noise
+    float bias_rw_std = 0.02f;
+    float q_bias = bias_rw_std * bias_rw_std * dt;
+    
+    // Predict covariance (analytical solution for constant dt)
+    // This avoids matrix multiplication numerical issues
+    float P00 = state->P[0][0] + 2.0f*dt*state->P[0][1] + dt2*state->P[1][1] 
+                - dt2*state->P[0][2] - dt3*state->P[1][2] + 0.25f*dt4*q_accel;
+    float P01 = state->P[0][1] + dt*state->P[1][1] - dt*state->P[0][2] 
+                - 0.5f*dt2*state->P[1][2] + 0.5f*dt3*q_accel;
+    float P02 = state->P[0][2] + dt*state->P[1][2];
+    float P11 = state->P[1][1] - 2.0f*dt*state->P[1][2] + dt2*state->P[2][2] + dt2*q_accel;
+    float P12 = state->P[1][2] - dt*state->P[2][2];
+    float P22 = state->P[2][2] + q_bias;
+    
+    float P_pred[3][3] = {
+        {P00, P01, P02},
+        {P01, P11, P12},
+        {P02, P12, P22}
     };
-
-    float F[2][2] = {{1.0f, dt}, {0.0f, 1.0f}};
-
-    // F * P
-    float FP[2][2];
-    FP[0][0] = F[0][0] * state->P[0][0] + F[0][1] * state->P[1][0];
-    FP[0][1] = F[0][0] * state->P[0][1] + F[0][1] * state->P[1][1];
-    FP[1][0] = F[1][0] * state->P[0][0] + F[1][1] * state->P[1][0];
-    FP[1][1] = F[1][0] * state->P[0][1] + F[1][1] * state->P[1][1];
-
-    // P_pred = F * P * F^T + Q
-    float P_pred[2][2];
-    P_pred[0][0] = FP[0][0] * F[0][0] + FP[0][1] * F[0][1] + Q[0][0];
-    P_pred[0][1] = FP[0][0] * F[1][0] + FP[0][1] * F[1][1] + Q[0][1];
-    P_pred[1][0] = FP[1][0] * F[0][0] + FP[1][1] * F[0][1] + Q[1][0];
-    P_pred[1][1] = FP[1][0] * F[1][0] + FP[1][1] * F[1][1] + Q[1][1];
-
+    
     // === 3. KALMAN GAIN ===
-    // We deliberately trust the altitude measurement LESS (higher R) because you said you don't care about altitude.
-    // This makes velocity almost purely driven by the IMU acceleration input → more responsive and much less noisy.
-    float dev = 1.2f; // 120 cm deviation
-    float R = dev * dev;   // <<< TUNE THIS (0.3² … 1.0²). Higher = less alt influence = smoother velocity
-
-    float S = P_pred[0][0] + R;   // innovation covariance
-
-    float K[2];
+    float dev = 0.5f;
+    float R = dev * dev;  // 0.5m std dev squared
+    float S = P_pred[0][0] + R;
+    
+    float K[3];
     K[0] = P_pred[0][0] / S;
-    K[1] = P_pred[1][0] / S;
-
+    K[1] = P_pred[0][1] / S;
+    K[2] = P_pred[0][2] / S;
+    
     // === 4. STATE UPDATE ===
     float y = alt_raw - S_pred[0];
-
+    
     state->S[0] = S_pred[0] + K[0] * y;
     state->S[1] = S_pred[1] + K[1] * y;
-
-    // === 5. COVARIANCE UPDATE (Joseph form — numerically stable, prevents negative variances or asymmetry) ===
-    // This is the most important stability fix over your original code.
-    float I_minus_KH[2][2] = {
-        {1.0f - K[0], 0.0f},
-        {-K[1],       1.0f}
-    };
-
-    // temp = (I - KH) * P_pred
-    float temp[2][2];
-    temp[0][0] = I_minus_KH[0][0] * P_pred[0][0] + I_minus_KH[0][1] * P_pred[1][0];
-    temp[0][1] = I_minus_KH[0][0] * P_pred[0][1] + I_minus_KH[0][1] * P_pred[1][1];
-    temp[1][0] = I_minus_KH[1][0] * P_pred[0][0] + I_minus_KH[1][1] * P_pred[1][0];
-    temp[1][1] = I_minus_KH[1][0] * P_pred[0][1] + I_minus_KH[1][1] * P_pred[1][1];
-
-    // P = temp * (I - KH)^T + K R K^T
-    state->P[0][0] = temp[0][0] * I_minus_KH[0][0] + temp[0][1] * I_minus_KH[1][0] + K[0] * R * K[0];
-    state->P[0][1] = temp[0][0] * I_minus_KH[0][1] + temp[0][1] * I_minus_KH[1][1] + K[0] * R * K[1];
-    state->P[1][0] = state->P[0][1];  // enforce symmetry (extra safety)
-    state->P[1][1] = temp[1][0] * I_minus_KH[0][1] + temp[1][1] * I_minus_KH[1][1] + K[1] * R * K[1];
+    state->S[2] = S_pred[2] + K[2] * y;
+    
+    // === 5. COVARIANCE UPDATE (simplified, stable) ===
+    float I_KH_00 = 1.0f - K[0];
+    float I_KH_01 = 0.0f;
+    float I_KH_02 = 0.0f;
+    float I_KH_10 = -K[1];
+    float I_KH_11 = 1.0f;
+    float I_KH_12 = 0.0f;
+    float I_KH_20 = -K[2];
+    float I_KH_21 = 0.0f;
+    float I_KH_22 = 1.0f;
+    
+    state->P[0][0] = I_KH_00 * P_pred[0][0] + I_KH_01 * P_pred[1][0] + I_KH_02 * P_pred[2][0] + K[0]*R*K[0];
+    state->P[0][1] = I_KH_00 * P_pred[0][1] + I_KH_01 * P_pred[1][1] + I_KH_02 * P_pred[2][1] + K[0]*R*K[1];
+    state->P[0][2] = I_KH_00 * P_pred[0][2] + I_KH_01 * P_pred[1][2] + I_KH_02 * P_pred[2][2] + K[0]*R*K[2];
+    
+    state->P[1][0] = state->P[0][1];
+    state->P[1][1] = I_KH_10 * P_pred[0][1] + I_KH_11 * P_pred[1][1] + I_KH_12 * P_pred[2][1] + K[1]*R*K[1];
+    state->P[1][2] = I_KH_10 * P_pred[0][2] + I_KH_11 * P_pred[1][2] + I_KH_12 * P_pred[2][2] + K[1]*R*K[2];
+    
+    state->P[2][0] = state->P[0][2];
+    state->P[2][1] = state->P[1][2];
+    state->P[2][2] = I_KH_20 * P_pred[0][2] + I_KH_21 * P_pred[1][2] + I_KH_22 * P_pred[2][2] + K[2]*R*K[2];
+    
+    // === 6. SANITY CHECK ===
+    if (fabsf(state->S[1]) > 5.0f || fabsf(state->S[2]) > 2.0f) {
+        // Reset if diverged
+        state->S[0] = alt_raw;
+        state->S[1] = 0.0f;
+        state->S[2] = 0.0f;
+        state->P[0][0] = 1.0f;
+        state->P[1][1] = 1.0f;
+        state->P[2][2] = 0.1f;
+    }
 }

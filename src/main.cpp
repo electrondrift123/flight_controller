@@ -54,16 +54,16 @@ void setup() {
   // delay(60000); // 60 sec
   // ////////// END
 
-  if (!main_rx_init()){
-    Serial.println("Error initializing main_rx");
-    // buzz_on();
-    while (1){
-      buzz_on();
-      delay(500);
-      buzz_off();
-      delay(500);
-    }
-  } // Initialize nRF24 radio
+  // if (!main_rx_init()){
+  //   Serial.println("Error initializing main_rx");
+  //   // buzz_on();
+  //   while (1){
+  //     buzz_on();
+  //     delay(500);
+  //     buzz_off();
+  //     delay(500);
+  //   }
+  // } // Initialize nRF24 radio
  
   // === PID CONTROLLER INITIALIZATION ===
   // angle mode ======  NOT YET TUNED & TESTED!

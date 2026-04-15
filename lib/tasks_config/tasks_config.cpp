@@ -205,9 +205,20 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
 
   float fusedAlt = 0.0f;
   float velocity_z = 0.0f;
+  float accel_bias = 0.0f;
 
-  float az_world = 0.0f; // in g units
-  emaInit(&azWorldLPF, 1.0f, 30.0f, 1000.0f); // PT1 for vertical acceleration in world frame, fc = 2 Hz, fs = 1 kHz (for Kalman fusion)
+  // compl
+  EMA_t alt_comp_LPF;
+  EMA_t vz_comp_LPF;
+  emaInit(&alt_comp_LPF, 1.0f, 2.0f, 100.0f);
+  emaInit(&vz_comp_LPF, 1.0f, 5.0f, 100.0f);
+  float vz_az_comp = 0.0f;
+  float vz_comp = 0.0f;
+  float alt_prev = 0.0f;
+
+  float az_true = 0.0f; // in g units
+  float az_true_f = 0.0f;
+  emaInit(&azWorldLPF, 1.0f, 10.0f, 1000.0f); // PT1 for vertical acceleration in world frame, fc = 2 Hz, fs = 1 kHz (for Kalman fusion)
 
   for (;;) {
     dt = intervalTicks * portTICK_PERIOD_MS / 1000.0f; // dt in seconds
@@ -267,32 +278,48 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       MadgwickSensorList[7] = my; // Mag Y
       MadgwickSensorList[8] = mz; // Mag Z
 
-      az_world = getTrueAz(&madData, az);  // get vertical acceleration in world frame (NED, so positive down) in g units
+      az_true = getTrueAz(&madData, az);  // get vertical acceleration in g units
 
       xSemaphoreGive(madgwickMutex);
     }
 
-    // --- call complementary filter ---
+    // --- call LP filter ---
     emaUpdate(&raw_alt_LPF, local_altitude); // Update raw altitude LPF
     local_altitude = raw_alt_LPF.output; // Get smoothed altitude for fusion
 
-    emaUpdate(&azWorldLPF, az_world); // LPF for vertical acceleration in world frame
+    emaUpdate(&azWorldLPF, az_true); // LPF for vertical acceleration in world frame
 
     if (kalman_counter >= kalman_interval) { // 100 Hz
-      float az_true_f = azWorldLPF.output; // Get smoothed vertical acceleration in world frame for fusion
+      az_true_f = azWorldLPF.output; // Get smoothed vertical acceleration in world frame for fusion
+      if (fabsf(az_true_f - 1.0f) < 0.15f) {  // Ignore small accelerations
+        az_true_f = 1.0f;
+      }
       az_true_f = (az_true_f - 1.0f) * 9.81f; 
-      // az_true_f = constrainFloat(az_true_f, -10.0f, 10.0f); // constrain to reasonable range (tune if needed)
+
+      //////// try complementary! 
+      const float alpha = 0.96f; // trust in baro
+      vz_az_comp += az_true_f * (dt * kalman_interval);
+      float derivative_alt = (local_altitude - alt_prev) / (dt * kalman_interval);
+      emaUpdate(&alt_comp_LPF, derivative_alt);
+      derivative_alt = alt_comp_LPF.output;
+      vz_comp = alpha * derivative_alt  + (1.0f - alpha) * (vz_az_comp);
+      emaUpdate(&vz_comp_LPF, vz_comp);
+      vz_comp = vz_comp_LPF.output;
+      alt_prev = local_altitude;
+      ///////////////////
+
       // fusedAlt = kalmanAltitudeUpdate(&kalmanState, local_altitude, az_world_filtered, dt * kalman_interval); // Kalman filter update for altitude estimation
       kalman_update(&kalmanState, local_altitude, az_true_f, dt * kalman_interval); // Kalman filter update for altitude estimation
       fusedAlt = kalmanState.S[0]; // Get altitude estimate from Kalman filter
       velocity_z = kalmanState.S[1]; // Get vertical velocity estimate from Kalman filter
+      accel_bias = kalmanState.S[2]; // see if converge to -0.30
 
       // also read velocity from Kalman state for future control
       // velocity_z = kalmanState.x[1]; // vertical velocity estimate from Kalman filter
       emaUpdate(&vzLPF, velocity_z);
-      velocity_z = vzLPF.output; // Get smoothed vertical velocity
+      // velocity_z = vzLPF.output; // Get smoothed vertical velocity
 
-      if (fabsf(fusedAlt) < 0.15f) fusedAlt = 0.0f; // prevent small noise around zero altitude
+      // if (fabsf(fusedAlt) < 0.15f) fusedAlt = 0.0f; // prevent small noise around zero altitude
       if (fabsf(velocity_z) < 0.20f) velocity_z = 0.0f; // deadband to prevent jitter around zero velocity
 
       kalman_counter = 0; // reset counter
@@ -313,9 +340,14 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       // Serial.println(madData.yaw);
 
       Serial.print("Vz: "); Serial.print(velocity_z); Serial.print(", ");
-      Serial.print("alt: "); Serial.println(fusedAlt);
+      Serial.print("alt: "); Serial.print(fusedAlt); Serial.print(", bias: ");
+      Serial.print(accel_bias); Serial.print(", vz_comp: "); Serial.println(vz_comp);
+
+      // Serial.print("az true f: "); Serial.println(az_true_f);
 
       // Serial.println(az_world); // 1g at ground, positive upward
+      // Serial.print("raw alt: "); Serial.print(local_altitude); Serial.print(", az true: ");
+      // Serial.println(((az_world - 1.0f) * 9.81));
 
       // Serial.print(mx); Serial.print(", "); Serial.print(my); Serial.print(", "); Serial.println(mz);
       xSemaphoreGive(serialMutex);
@@ -785,19 +817,19 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
-  result = xTaskCreate(
-    RXtask,
-    "nRF24 RX task",
-    256,
-    NULL,
-    PRIORITY_RADIO,
-    &radioTaskHandle
-  );
-  if (result != pdPASS) {
-    // Handle task creation failure
-    Serial.println("Failed to create RXtask");
-    while (1); // Infinite loop to indicate failure
-  }
+  // result = xTaskCreate(
+  //   RXtask,
+  //   "nRF24 RX task",
+  //   256,
+  //   NULL,
+  //   PRIORITY_RADIO,
+  //   &radioTaskHandle
+  // );
+  // if (result != pdPASS) {
+  //   // Handle task creation failure
+  //   Serial.println("Failed to create RXtask");
+  //   while (1); // Infinite loop to indicate failure
+  // }
 
   result = xTaskCreate(
     batteryMonitorTask,
