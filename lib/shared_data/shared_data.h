@@ -35,7 +35,7 @@
 #define GAMMA_B         0.001f
 #define SIGMA           0.001f
 #define B_SIGN          1.0f
-#define CONTROLLER_MODE 1.0f // 0 = adaptive, 1 = static
+#define CONTROLLER_MODE 0.0f // 0 = adaptive, 1 = static
 
 // #define THESIS_MODE 0.0f // 0 = not, 1 = thesis mode
 
@@ -88,10 +88,6 @@ extern LyGAPIDControllerData_t pidYawRate;
 // extern Butterworth2ndLPF_t pidLPF;  // Gyroscope LPF
 extern EMA_t axLPF, ayLPF, azLPF; // Accelerometer LPF
 extern EMA_t pidLPF; // EMA for PID output
-extern EMA_t dP;
-extern EMA_t dkp_;
-extern EMA_t dki_;
-extern EMA_t dkd_;
 
 // altitude hold (z-axis velocity control)
 extern VelocityControlZData_t vc_z; // outer PI controller for altitude hold

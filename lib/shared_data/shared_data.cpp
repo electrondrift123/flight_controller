@@ -21,10 +21,6 @@ LyGAPIDControllerData_t pidYawRate;
 // Butterworth2ndLPF_t pidLPF;  // Gyroscope LPF (init inside LyGAPID)
 EMA_t axLPF, ayLPF, azLPF; // Accelerometer LPF
 EMA_t pidLPF; // EMA for PID output
-EMA_t dP;
-EMA_t dkp_;
-EMA_t dki_;
-EMA_t dkd_;
 
 // altitude hold (z-axis velocity control)
 VelocityControlZData_t vc_z;

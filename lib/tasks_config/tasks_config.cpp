@@ -497,7 +497,7 @@ void PIDtask(void* Parameters) {
     if (E_LAND && !KILL_MOTORS) {
       // Force descent unless pilot is actively climbing
       if (vz_cmd < 0.1f) {  // Not commanding significant climb
-        vz_cmd = -0.5f;   // Safe descent rate (maybe)
+        vz_cmd = -0.3f;   // Safe descent rate, was 0.5
       }
       // If pilot gives positive vz_cmd, let them override
     }
