@@ -36,7 +36,7 @@ EMA_t vzLPF;
 
 EMA_t d_filter;
 
-EMA_t azWorldLPF;
+EMA_t azTrueLPF;
 
 // voltage monitor
 EMA_t VbLPF;
@@ -60,6 +60,8 @@ volatile float eulerAngles[3] = {0.0f, 0.0f, 0.0f};
 
 volatile float inputList[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.01f, 0.01f};
 volatile float telemetry[5] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+
+volatile int16_t thesis_telemetry[16] = {0};
 
 volatile float MadgwickSensorList[9] = {0.00f, 0.00f, 0.00f,
                                         0.00f, 0.00f, 0.00f,

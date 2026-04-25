@@ -22,7 +22,7 @@ float computeVelocityControlZ(VelocityControlZData_t* vz, float v_cmd, float vel
 
     float error = v_cmd - velocity_z;       // positive = need more upward thrust
 
-    float deadband = 0.15f; // 15 cm/s deadband
+    float deadband = 0.05f; // 15 cm/s deadband
     if (fabs(error) < deadband) { // deadband to prevent jitter around zero velocity
         error = 0.0f;
     }
@@ -47,7 +47,7 @@ float computeVelocityControlZ(VelocityControlZData_t* vz, float v_cmd, float vel
 
     // Output saturation
     if (u > vz->output_limit)  u = vz->output_limit;
-    if (u < -vz->output_limit) u = - (vz->output_limit * 0.60f); // 40% reduced (-150)
+    if (u < -150.0f) u = - (150.0f); // was (-150)
 
     return u;
 }
@@ -83,7 +83,7 @@ float computeAltitudeControl(VelocityControlZData_t* vc_z, float v_cmd, float al
     float error = vc_z->altitude_sp - altitude; // positive error means we need to go up
 
     vc_z->integral += error * dt;
-    float integral_limit = 250.0f;
+    float integral_limit = 200.0f;
     if (vc_z->integral > integral_limit) vc_z->integral = integral_limit;
     else if (vc_z->integral < -integral_limit) vc_z->integral = -integral_limit;
     

@@ -10,6 +10,9 @@ SemaphoreHandle_t eulerAnglesMutex;
 SemaphoreHandle_t nRF24Mutex;
 SemaphoreHandle_t telemetryMutex;
 
+// thesis 
+SemaphoreHandle_t thesisTelemetryMutex;
+
 SemaphoreHandle_t madgwickMutex;
 
 
@@ -54,6 +57,12 @@ void mutexes_init(void){
   madgwickMutex = xSemaphoreCreateMutex();
   if (madgwickMutex == NULL) {
     Serial.println("Failed to create Madgwick mutex!");
+    while (1); // halt or retry
+  }
+
+  thesisTelemetryMutex = xSemaphoreCreateMutex();
+  if (thesisTelemetryMutex == NULL){
+    Serial.println("Failed to create thesis telemetry mutex!");
     while (1); // halt or retry
   }
 

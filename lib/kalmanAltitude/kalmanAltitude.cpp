@@ -127,8 +127,8 @@ void kalman_update(KalmanState_t* state, float alt_raw, float az, float dt) {
     float dt4 = dt2 * dt2;
     
     // Process noise
-    float q_accel = 0.1f;      // Acceleration process noise
-    float bias_rw_std = 0.02f;
+    float q_accel = 0.4f;      // Acceleration process noise (uncertainty in az), was 0.1
+    float bias_rw_std = 0.02f; // was 0.020
     float q_bias = bias_rw_std * bias_rw_std * dt;
     
     // Predict covariance (analytical solution for constant dt)
@@ -149,7 +149,7 @@ void kalman_update(KalmanState_t* state, float alt_raw, float az, float dt) {
     };
     
     // === 3. KALMAN GAIN ===
-    float dev = 0.5f;
+    float dev = 0.4f; // expected deviation from baro
     float R = dev * dev;  // 0.5m std dev squared
     float S = P_pred[0][0] + R;
     
@@ -199,3 +199,4 @@ void kalman_update(KalmanState_t* state, float alt_raw, float az, float dt) {
         state->P[2][2] = 0.1f;
     }
 }
+

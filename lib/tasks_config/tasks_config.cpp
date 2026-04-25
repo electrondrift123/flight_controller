@@ -176,7 +176,7 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
   emaInit(&ayLPF, 1.0f, 3.0f, 1000.0f); // 15 Hz cutoff
   emaInit(&azLPF, 1.0f, 3.0f, 1000.0f); // 15 Hz cutoff
 
-  emaInit(&raw_alt_LPF, 1.0f, 1.0f, 1000.0f); // PT1, fc = 1 Hz, fs = 1 kHz for raw altitude measurement smoothing
+  emaInit(&raw_alt_LPF, 1.0f, 5.0f, 1000.0f); // PT1, fc = 1 Hz, fs = 1 kHz for raw altitude measurement smoothing
   emaInit(&vzLPF, 1.0f, 10.0f, 100.0f);
 
   float dt;
@@ -210,7 +210,7 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
   // compl
   EMA_t alt_comp_LPF;
   EMA_t vz_comp_LPF;
-  emaInit(&alt_comp_LPF, 1.0f, 2.0f, 100.0f);
+  emaInit(&alt_comp_LPF, 1.0f, 10.0f, 100.0f); // was fc = 2Hz
   emaInit(&vz_comp_LPF, 1.0f, 5.0f, 100.0f);
   float vz_az_comp = 0.0f;
   float vz_comp = 0.0f;
@@ -218,7 +218,7 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
 
   float az_true = 0.0f; // in g units
   float az_true_f = 0.0f;
-  emaInit(&azWorldLPF, 1.0f, 10.0f, 1000.0f); // PT1 for vertical acceleration in world frame, fc = 2 Hz, fs = 1 kHz (for Kalman fusion)
+  emaInit(&azTrueLPF, 1.0f, 10.0f, 1000.0f); // PT1 for vertical acceleration in world frame, fc = 2 Hz, fs = 1 kHz (for Kalman fusion)
 
   for (;;) {
     dt = intervalTicks * portTICK_PERIOD_MS / 1000.0f; // dt in seconds
@@ -287,29 +287,18 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
     emaUpdate(&raw_alt_LPF, local_altitude); // Update raw altitude LPF
     local_altitude = raw_alt_LPF.output; // Get smoothed altitude for fusion
 
-    emaUpdate(&azWorldLPF, az_true); // LPF for vertical acceleration in world frame
+    emaUpdate(&azTrueLPF, az_true); // LPF for vertical acceleration in world frame
 
     if (kalman_counter >= kalman_interval) { // 100 Hz
-      az_true_f = azWorldLPF.output; // Get smoothed vertical acceleration in world frame for fusion
-      if (fabsf(az_true_f - 1.0f) < 0.15f) {  // Ignore small accelerations
+      az_true_f = azTrueLPF.output; // Get smoothed vertical acceleration in world frame for fusion
+      if (fabsf(az_true_f - 1.0f) < 0.10f) {  // Ignore small accelerations
         az_true_f = 1.0f;
       }
       az_true_f = (az_true_f - 1.0f) * 9.81f; 
 
-      //////// try complementary! 
-      const float alpha = 0.96f; // trust in baro
-      vz_az_comp += az_true_f * (dt * kalman_interval);
-      float derivative_alt = (local_altitude - alt_prev) / (dt * kalman_interval);
-      emaUpdate(&alt_comp_LPF, derivative_alt);
-      derivative_alt = alt_comp_LPF.output;
-      vz_comp = alpha * derivative_alt  + (1.0f - alpha) * (vz_az_comp);
-      emaUpdate(&vz_comp_LPF, vz_comp);
-      vz_comp = vz_comp_LPF.output;
-      alt_prev = local_altitude;
-      ///////////////////
-
       // fusedAlt = kalmanAltitudeUpdate(&kalmanState, local_altitude, az_world_filtered, dt * kalman_interval); // Kalman filter update for altitude estimation
       kalman_update(&kalmanState, local_altitude, az_true_f, dt * kalman_interval); // Kalman filter update for altitude estimation
+      // kalman_update(&kalmanState, local_altitude, az_true_f, 0.010f); // Kalman filter update for altitude estimation
       fusedAlt = kalmanState.S[0]; // Get altitude estimate from Kalman filter
       velocity_z = kalmanState.S[1]; // Get vertical velocity estimate from Kalman filter
       accel_bias = kalmanState.S[2]; // see if converge to -0.30
@@ -320,7 +309,13 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       // velocity_z = vzLPF.output; // Get smoothed vertical velocity
 
       // if (fabsf(fusedAlt) < 0.15f) fusedAlt = 0.0f; // prevent small noise around zero altitude
-      if (fabsf(velocity_z) < 0.20f) velocity_z = 0.0f; // deadband to prevent jitter around zero velocity
+      float vz_deadband = 0.15f; // was 20
+      // if (fabs(az_true_f) < 0.1f && fabs(velocity_z) < 0.3f) vz_deadband = 0.05f;
+      if (fabsf(velocity_z) < vz_deadband) velocity_z = 0.0f; // deadband to prevent jitter around zero velocity
+
+      // leakage for vz
+      const float vz_leak = 0.999f;
+      velocity_z *= vz_leak;
 
       kalman_counter = 0; // reset counter
     }
@@ -332,26 +327,26 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       xSemaphoreGive(telemetryMutex);
     }
 
-    // debug printf
-    if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
-      // Serial.print("Euler: ");
-      // Serial.print(madData.roll); Serial.print(", ");
-      // Serial.print(madData.pitch); Serial.print(", ");
-      // Serial.println(madData.yaw);
+    // // debug printf
+    // if (xSemaphoreTake(serialMutex, portMAX_DELAY)){
+    //   // Serial.print("Euler: ");
+    //   // Serial.print(madData.roll); Serial.print(", ");
+    //   // Serial.print(madData.pitch); Serial.print(", ");
+    //   // Serial.println(madData.yaw);
 
-      Serial.print("Vz: "); Serial.print(velocity_z); Serial.print(", ");
-      Serial.print("alt: "); Serial.print(fusedAlt); Serial.print(", bias: ");
-      Serial.print(accel_bias); Serial.print(", vz_comp: "); Serial.println(vz_comp);
+    //   Serial.print("Vz: "); Serial.print(velocity_z); Serial.print(", ");
+    //   Serial.print("alt: "); Serial.print(fusedAlt); Serial.print(", bias: ");
+    //   Serial.println(accel_bias); 
 
-      // Serial.print("az true f: "); Serial.println(az_true_f);
+    //   // Serial.print("az true f: "); Serial.println(az_true_f);
 
-      // Serial.println(az_world); // 1g at ground, positive upward
-      // Serial.print("raw alt: "); Serial.print(local_altitude); Serial.print(", az true: ");
-      // Serial.println(((az_world - 1.0f) * 9.81));
+    //   // Serial.println(az_world); // 1g at ground, positive upward
+    //   // Serial.print("raw alt: "); Serial.print(local_altitude); Serial.print(", az true: ");
+    //   // Serial.println(((az_world - 1.0f) * 9.81));
 
-      // Serial.print(mx); Serial.print(", "); Serial.print(my); Serial.print(", "); Serial.println(mz);
-      xSemaphoreGive(serialMutex);
-    }
+    //   // Serial.print(mx); Serial.print(", "); Serial.print(my); Serial.print(", "); Serial.println(mz);
+    //   xSemaphoreGive(serialMutex);
+    // }
 
     vTaskDelayUntil(&lastWakeTime, intervalTicks); 
   }
@@ -364,12 +359,12 @@ void PIDtask(void* Parameters) {
 
   // ====================== CONFIG ======================
   const float BASE_THROTTLE = 1000.0f;      // Fixed base in mixer
-  const float MAX_TB        = 520.0f;       // Maximum hover component for takeoff only (was 50%)
-  const float HOVER_TB      = 520.0f;       // Starting guess - tune this later
+  const float MAX_TB        = 545.0f;       // Maximum hover component for takeoff only (was 53% too low, 58% too high), [54, 55]
+  const float HOVER_TB      = MAX_TB;       // Starting guess - tune this later
 
-  const float KP_VZ = 160.0f; // was 180
-  const float KI_VZ = 50.0f;
-  const float VZ_OUTPUT_LIMIT = 250.0f;
+  const float KP_VZ = 140.0f; // was 160: [140, 180]
+  const float KI_VZ = 0.5f; // was 0.5 good, [0.5, 2]
+  const float VZ_OUTPUT_LIMIT = 200.0f; // was 250
 
   const float ARM_HOLD_TIME = 2.5f;
 
@@ -421,7 +416,7 @@ void PIDtask(void* Parameters) {
   float takeoffRamp = 0.0f;
 
   float vz_correction = 0.0f;
-  float tb = 0.0f;                        // 0 → 500 (this is your hover component)
+  float tb = 0.0f;                        // 0 → hover (this is your hover component)
   float Vb = 0.0; // 3s lipo: [11.4V, 12.6V]
 
   float motor_cmd[4] = {MOTOR_MIN, MOTOR_MIN, MOTOR_MIN, MOTOR_MIN};
@@ -492,6 +487,9 @@ void PIDtask(void* Parameters) {
       velocity_z = telemetry[1];
       Vb = telemetry[4] / 100.0f; // Convert to volts (3S LiPo)
 
+      if (Vb > 12.6f) Vb = 12.6f;
+      else if (Vb < 11.0f) Vb = 11.0f;
+
       xSemaphoreGive(telemetryMutex);
     }
 
@@ -504,13 +502,13 @@ void PIDtask(void* Parameters) {
       // If pilot gives positive vz_cmd, let them override
     }
 
-    // if (flightState == DISARMED || flightState == ARMED_IDLE) { 
-    //   altitude = 0.0f;
-    //   velocity_z = 0.0f;
-    //   // Also reset Kalman alt & velocity state if possible (also the P matrix)
-    //   // reset_kalmanAltitude(&kalmanState); // Reset Kalman filter state
-    //   kalman_reset(&kalmanState);
-    // }
+    if (flightState == DISARMED || flightState == ARMED_IDLE) { 
+      altitude = 0.0f;
+      velocity_z = 0.0f;
+      // Also reset Kalman alt & velocity state if possible (also the P matrix)
+      // reset_kalmanAltitude(&kalmanState); // Reset Kalman filter state
+      kalman_reset(&kalmanState);
+    }
 
     if ((flightState == TAKEOFF || flightState == FLYING) && 
       (fabsf(roll) > MAX_SAFE_ANGLE_RAD || fabsf(pitch) > MAX_SAFE_ANGLE_RAD)) {
@@ -578,7 +576,7 @@ void PIDtask(void* Parameters) {
           ge_comp = K_GE * (R_PROP / z) * (R_PROP / z);
         }
 
-        static float Vb_hover_gain = 40.0f;
+        static float Vb_hover_gain = 50.0f; // was 40
         tb = HOVER_TB + Vb_hover_gain * (12.6f - Vb) - ge_comp; // voltage sag compensation     
         break;
     }
@@ -651,15 +649,778 @@ void PIDtask(void* Parameters) {
     TIM2->CCR3 = (uint16_t)motor_cmd[2];
     TIM2->CCR4 = (uint16_t)motor_cmd[3];
 
-    if (++print_counter >= 50) {
-      print_counter = 0;
-    }
+    // if (++print_counter >= 50) {
+    //   print_counter = 0;
+    // }
 
     vTaskDelayUntil(&lastWakeTime, interval);
   }
 }
 
-// deepseek (good!)
+// // thesis PID task (CPU load)
+// void PIDtask(void* Parameters) {
+//   TickType_t lastWakeTime = xTaskGetTickCount();
+//   const TickType_t interval = pdMS_TO_TICKS(2);  // 500 Hz
+//   const float dt = 0.002f;
+
+//   // ====================== CONFIG ======================
+//   const float BASE_THROTTLE = 1000.0f;
+//   const float MAX_TB        = 520.0f;
+//   const float HOVER_TB      = 520.0f;
+
+//   const float KP_VZ = 160.0f;
+//   const float KI_VZ = 50.0f;
+//   const float VZ_OUTPUT_LIMIT = 250.0f;
+
+//   const float ARM_HOLD_TIME = 2.5f;
+
+//   const float MOTOR_MIN = 1050.0f;
+//   const float MOTOR_MAX = 2000.0f;
+
+//   bool KILL_MOTORS = false;
+//   bool E_LAND = false;
+
+//   // ====================== VARIABLES ======================
+//   float vz_cmd = 0.0f;
+//   float vz_cmdFiltered = 0.0f;
+//   float velocity_z = 0.0f;
+//   float altitude = 0.0f;
+
+//   float roll, pitch, yaw;
+//   float rollRate, pitchRate, yawRate;
+
+//   float rollInput, pitchInput, yawInput;
+
+//   float rollInputFiltered = 0.0f;
+//   float pitchInputFiltered = 0.0f;
+//   float yawInputFiltered = 0.0f;
+
+//   // EMA filters
+//   emaInit(&R_LPF, 1.0f, 15.0f, 500.0f);
+//   emaInit(&P_LPF, 1.0f, 15.0f, 500.0f);
+//   emaInit(&Y_LPF, 1.0f, 20.0f, 500.0f);
+//   emaInit(&T_LPF, 1.0f, 12.0f, 500.0f);
+
+//   typedef enum {
+//     VELOCITY_CONTROL,
+//     ALTITUDE_CONTROL
+//   } VerticalControlMode_t;
+
+//   VerticalControlMode_t vertical_mode = VELOCITY_CONTROL;
+
+//   typedef enum {
+//     DISARMED,
+//     ARMED_IDLE,
+//     TAKEOFF,
+//     FLYING
+//   } FlightState_t;
+
+//   FlightState_t flightState = DISARMED;
+//   float armingTimer = 0.0f;
+//   float takeoffRamp = 0.0f;
+
+//   float vz_correction = 0.0f;
+//   float tb = 0.0f;
+//   float Vb = 0.0;
+
+//   float motor_cmd[4] = {MOTOR_MIN, MOTOR_MIN, MOTOR_MIN, MOTOR_MIN};
+
+//   initVelocityControlZ(&vz_in, KP_VZ, KI_VZ, VZ_OUTPUT_LIMIT);
+
+//   float roll_rate_setpoint = 0.0f;
+//   float pitch_rate_setpoint = 0.0f;
+//   float yaw_rate_setpoint = 0.0f;
+
+//   float ax, ay, az, wx, wy, wz, mx, my, mz;
+
+//   int outer_loop_counter = 0;
+//   int print_counter = 0;
+
+//   // ====================== BENCHMARKING VARIABLES ======================
+//   typedef struct {
+//     uint64_t cycles_total;
+//     uint32_t sample_count;
+//     uint32_t min_cycles;
+//     uint32_t max_cycles;
+//     float last_mode;  // Track mode changes
+//   } pid_benchmark_t;
+  
+//   static pid_benchmark_t bench = {
+//     .cycles_total = 0,
+//     .sample_count = 0,
+//     .min_cycles = 0xFFFFFFFF,
+//     .max_cycles = 0,
+//     .last_mode = -1.0f  // Invalid initial value
+//   };
+  
+//   // Initialize cycle counter
+//   CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+//   DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+//   DWT->CYCCNT = 0;
+  
+//   uint32_t cascade_start, cascade_end, cascade_cycles;
+//   float current_mode;
+  
+//   vTaskDelay(pdMS_TO_TICKS(3000));
+
+//   for (;;) {
+//     // Sensor Read (Madgwick + Telemetry)
+//     if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//       ax = MadgwickSensorList[0]; ay = MadgwickSensorList[1]; az = MadgwickSensorList[2];
+//       wx = MadgwickSensorList[3]; wy = MadgwickSensorList[4]; wz = MadgwickSensorList[5];
+//       mx = MadgwickSensorList[6]; my = MadgwickSensorList[7]; mz = MadgwickSensorList[8];
+//       xSemaphoreGive(madgwickMutex);
+//     }
+
+//     MadgwickFilterUpdate(&madData, wx, wy, wz, ax, ay, az, mx, my, mz, dt);
+//     MadgwickGetEuler(&madData);
+
+//     if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//       eulerAngles[0] = madData.roll;
+//       eulerAngles[1] = madData.pitch;
+//       eulerAngles[2] = madData.yaw;
+//       xSemaphoreGive(eulerAnglesMutex);
+//     }
+
+//     roll  = eulerAngles[0] * DEG_TO_RAD;
+//     pitch = eulerAngles[1] * DEG_TO_RAD;
+//     yaw   = eulerAngles[2] * DEG_TO_RAD;
+
+//     rollRate  = wx;
+//     pitchRate = wy;
+//     yawRate   = wz;
+
+//     // User Input
+//     if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//       vz_cmd     = inputList[0];
+//       yawInput   = inputList[1];
+//       pitchInput = inputList[2];
+//       rollInput  = inputList[3];
+
+//       KILL_MOTORS = (inputList[4] != 0.0f);
+//       bool pilot_E_LAND = (inputList[5] != 0.0f);
+
+//       if (!KILL_MOTORS) {
+//         if (pilot_E_LAND || (Vb < 11.1f)) E_LAND = true;
+//         else E_LAND = false;
+//       }
+      
+//       xSemaphoreGive(nRF24Mutex);
+//     }
+
+//     // Telemetry Update
+//     if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//       altitude = telemetry[0];
+//       velocity_z = telemetry[1];
+//       Vb = telemetry[4] / 100.0f;
+//       xSemaphoreGive(telemetryMutex);
+//     }
+
+//     if (E_LAND && !KILL_MOTORS) {
+//       if (vz_cmd < 0.1f) {
+//         vz_cmd = -0.5f;
+//       }
+//     }
+
+//     if ((flightState == TAKEOFF || flightState == FLYING) && 
+//       (fabsf(roll) > MAX_SAFE_ANGLE_RAD || fabsf(pitch) > MAX_SAFE_ANGLE_RAD)) {
+//       KILL_MOTORS = true;
+//       flightState = DISARMED;
+//     }
+
+//     // ====================== ARMING ======================
+//     // bool sticksInArmPosition = (vz_cmd < -0.70f) && (fabsf(pitchInput) > 18.0f * DEG_TO_RAD);
+//     bool sticksInArmPosition = true;
+
+//     if (flightState == DISARMED) {
+//       if (sticksInArmPosition) {
+//         armingTimer += dt;
+//         if (armingTimer >= ARM_HOLD_TIME) {
+//           flightState = ARMED_IDLE;
+//           armingTimer = 0.0f;
+//           tb = 0.0f;
+//           buzz_it(1, 120);
+//           for (int i = 0; i < 4; i++) motor_cmd[i] = 1150.0f;
+//         }
+//       } else {
+//         armingTimer = 0.0f;
+//       }
+//     }
+
+//     // ====================== STATE MACHINE ======================
+//     switch (flightState) {
+//       case DISARMED:
+//         tb = 0.0f;
+//         vz_in.is_flying = 0.0f;
+//         break;
+
+//       case ARMED_IDLE:
+//         tb = 0.0f;
+//         vz_in.is_flying = 0.0f;
+//         if (vz_cmd > -0.70f) { 
+//           flightState = TAKEOFF;
+//           takeoffRamp = 0.0f;
+//         }
+//         break;
+
+//       case TAKEOFF:
+//         vz_in.is_flying = 1.0f;
+//         takeoffRamp += dt * 0.75f;
+//         if (takeoffRamp > 1.0f) takeoffRamp = 1.0f;
+
+//         tb = takeoffRamp * MAX_TB;
+
+//         if (takeoffRamp >= 1.0f && fabsf(velocity_z) < 0.5f) {
+//           flightState = FLYING;
+//         }
+//         break;
+
+//       case FLYING:
+//         vz_in.is_flying = 1.0f;
+//         const float K_GE = 200.0f;
+//         const float GE_THRESHOLD = 1.4f;
+//         const float R_PROP = 0.127f;
+//         float ge_comp = 0.0f;
+
+//         if (altitude < GE_THRESHOLD && E_LAND) {
+//           float z = altitude;
+//           if (z < 0.3) z = 0.3;
+//           ge_comp = K_GE * (R_PROP / z) * (R_PROP / z);
+//         }
+
+//         static float Vb_hover_gain = 40.0f;
+//         tb = HOVER_TB + Vb_hover_gain * (12.6f - Vb) - ge_comp;
+//         break;
+//     }
+
+//     // ====================== FILTERING ======================
+//     emaUpdate(&R_LPF, rollInput);
+//     emaUpdate(&P_LPF, pitchInput);
+//     emaUpdate(&Y_LPF, yawInput);
+//     emaUpdate(&T_LPF, vz_cmd);
+
+//     rollInputFiltered  = constrainFloat(R_LPF.output, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+//     pitchInputFiltered = constrainFloat(P_LPF.output, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+//     yawInputFiltered   = constrainFloat(Y_LPF.output, -YAW_MAX, YAW_MAX);
+//     vz_cmdFiltered     = T_LPF.output;
+
+//     // Check for mode change
+//     current_mode = pidRoll.mode;
+//     if (current_mode != bench.last_mode) {
+//       // Mode changed - reset benchmark data
+//       bench.cycles_total = 0;
+//       bench.sample_count = 0;
+//       bench.min_cycles = 0xFFFFFFFF;
+//       bench.max_cycles = 0;
+//       bench.last_mode = current_mode;
+//     }
+
+//     // ====================== CASCADED P-PID MEASUREMENT START ======================
+//     cascade_start = DWT->CYCCNT;
+    
+//     // Attitude outer loop @ 100 Hz
+//     outer_loop_counter++;
+//     if (outer_loop_counter >= 5) {
+//       if ((flightState == TAKEOFF || flightState == FLYING) && vertical_mode == VELOCITY_CONTROL) {
+//         vz_correction = computeVelocityControlZ(&vz_in, vz_cmdFiltered, velocity_z, dt);
+//       }
+//       roll_rate_setpoint  = computeLyGAPID_out(&pidRoll,  rollInputFiltered,  roll,  0.01f);
+//       pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, 0.01f);
+//       outer_loop_counter = 0;
+//     }
+
+//     yaw_rate_setpoint = yawInputFiltered;
+
+//     bool isLanded = (flightState == DISARMED || flightState == ARMED_IDLE);
+//     pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = isLanded ? 1.0f : 0.0f;
+
+//     // Inner loop - Rate PID controllers
+//     float R_mix = constrainFloat(computeLyGAPID_in(&pidRollRate, roll_rate_setpoint, rollRate, dt), 
+//                                  -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
+//     float P_mix = constrainFloat(computeLyGAPID_in(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt), 
+//                                  -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
+//     float Y_mix = constrainFloat(computeLyGAPID_yaw(&pidYawRate, yaw_rate_setpoint, yawRate, dt), 
+//                                  -U_MAX_YAW_RATE, U_MAX_YAW_RATE);
+    
+//     cascade_end = DWT->CYCCNT;
+//     cascade_cycles = cascade_end - cascade_start;
+//     // ====================== CASCADED P-PID MEASUREMENT END ======================
+    
+//     // Store benchmark data only when flying
+//     if (flightState == FLYING) {
+//       bench.cycles_total += cascade_cycles;
+//       bench.sample_count++;
+      
+//       if (cascade_cycles < bench.min_cycles) 
+//         bench.min_cycles = cascade_cycles;
+//       if (cascade_cycles > bench.max_cycles) 
+//         bench.max_cycles = cascade_cycles;
+//     }
+
+//     float total_throttle = BASE_THROTTLE + tb + vz_correction;
+
+//     if (flightState == TAKEOFF || flightState == FLYING) {
+//       total_throttle = constrainFloat(total_throttle, 1450.0f, 1750.0f);
+//     }
+
+//     // Motor Mixer
+//     if (KILL_MOTORS) {
+//       resetLyGAPID(&pidRoll); resetLyGAPID(&pidPitch);
+//       resetLyGAPID(&pidRollRate); resetLyGAPID(&pidPitchRate); resetLyGAPID(&pidYawRate);
+//       kalman_reset(&kalmanState);
+//       flightState = DISARMED;
+//       tb = 0.0f;
+//       vz_in.is_flying = 0.0f;
+//       pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = 1.0f;
+//       for (int i = 0; i < 4; i++) motor_cmd[i] = MOTOR_MIN;
+//     } else {
+//       motor_cmd[0] = total_throttle + R_mix + P_mix - Y_mix;
+//       motor_cmd[1] = total_throttle - R_mix + P_mix + Y_mix;
+//       motor_cmd[2] = total_throttle + R_mix - P_mix + Y_mix;
+//       motor_cmd[3] = total_throttle - R_mix - P_mix - Y_mix;
+//     }
+
+//     for (int i = 0; i < 4; i++) {
+//       motor_cmd[i] = constrainFloat(motor_cmd[i], MOTOR_MIN, MOTOR_MAX);
+//     }
+
+//     // Motor Output
+//     TIM2->CCR1 = (uint16_t)motor_cmd[0];
+//     TIM2->CCR2 = (uint16_t)motor_cmd[1];
+//     TIM2->CCR3 = (uint16_t)motor_cmd[2];
+//     TIM2->CCR4 = (uint16_t)motor_cmd[3];
+
+//     // ====================== PERIODIC BENCHMARK REPORT ======================
+//     print_counter++;
+//     if (print_counter >= 2500) {  // Every 5 seconds at 500Hz
+//       if (flightState == FLYING && bench.sample_count > 0) {
+//         float cpu_freq = SystemCoreClock / 1000000.0f;
+//         float avg_us = (bench.cycles_total / (float)bench.sample_count) / cpu_freq;
+//         float min_us = bench.min_cycles / cpu_freq;
+//         float max_us = bench.max_cycles / cpu_freq;
+//         float cpu_load = (avg_us / 2000.0f) * 100.0f;
+        
+//         if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(100))) {
+//           Serial.println();
+          
+//           if (current_mode == 1.0f) {
+//             Serial.println(F("STATIC PID BENCHMARK"));
+//           } else {
+//             Serial.println(F("ADAPTIVE PID BENCHMARK"));
+//           }
+          
+//           Serial.println(F("├──────────────────────────────────────────────────────┤"));
+          
+//           Serial.print(F("Samples:  "));
+//           Serial.print((unsigned int)bench.sample_count);
+//           Serial.println(F("   "));
+          
+//           Serial.print(F("Average:  "));
+//           Serial.print(avg_us, 2);
+//           Serial.println(F(" us"));
+          
+//           Serial.print(F("Minimum:  "));
+//           Serial.print(min_us, 2);
+//           Serial.println(F(" us     "));
+          
+//           Serial.print(F("Maximum:  "));
+//           Serial.print(max_us, 2);
+//           Serial.println(F(" us   "));
+          
+//           Serial.print(F("CPU Load: "));
+//           Serial.println(cpu_load, 2);
+
+          
+//           xSemaphoreGive(serialMutex);
+//         }
+//       }
+//       print_counter = 0;
+//     }
+
+//     vTaskDelayUntil(&lastWakeTime, interval);
+//   }
+// }
+
+///////////////////////////////////////////////////////////////
+// // thesis PID task (telemetry): to be tested
+// void PIDtask(void* Parameters) {
+//   TickType_t lastWakeTime = xTaskGetTickCount();
+//   const TickType_t interval = pdMS_TO_TICKS(2);  // 500 Hz
+//   const float dt = 0.002f;
+
+//   // ====================== CONFIG ======================
+//   const float BASE_THROTTLE = 1000.0f;
+//   const float MAX_TB        = 520.0f;
+//   const float HOVER_TB      = 520.0f;
+
+//   const float KP_VZ = 160.0f;
+//   const float KI_VZ = 50.0f;
+//   const float VZ_OUTPUT_LIMIT = 250.0f;
+
+//   const float ARM_HOLD_TIME = 2.5f;
+
+//   const float MOTOR_MIN = 1050.0f;
+//   const float MOTOR_MAX = 2000.0f;
+
+//   bool KILL_MOTORS = false;
+//   bool E_LAND = false;
+
+//   // ====================== VARIABLES ======================
+//   float vz_cmd = 0.0f;
+//   float vz_cmdFiltered = 0.0f;
+//   float velocity_z = 0.0f;
+//   float altitude = 0.0f;
+
+//   float roll, pitch, yaw;
+//   float rollRate, pitchRate, yawRate;
+
+//   float rollInput, pitchInput, yawInput;
+
+//   float rollInputFiltered = 0.0f;
+//   float pitchInputFiltered = 0.0f;
+//   float yawInputFiltered = 0.0f;
+
+//   // EMA filters
+//   emaInit(&R_LPF, 1.0f, 15.0f, 500.0f);
+//   emaInit(&P_LPF, 1.0f, 15.0f, 500.0f);
+//   emaInit(&Y_LPF, 1.0f, 20.0f, 500.0f);
+//   emaInit(&T_LPF, 1.0f, 12.0f, 500.0f);
+
+//   typedef enum {
+//     VELOCITY_CONTROL,
+//     ALTITUDE_CONTROL
+//   } VerticalControlMode_t;
+
+//   VerticalControlMode_t vertical_mode = VELOCITY_CONTROL;
+
+//   typedef enum {
+//     DISARMED,
+//     ARMED_IDLE,
+//     TAKEOFF,
+//     FLYING
+//   } FlightState_t;
+
+//   FlightState_t flightState = DISARMED;
+//   float armingTimer = 0.0f;
+//   float takeoffRamp = 0.0f;
+
+//   float vz_correction = 0.0f;
+//   float tb = 0.0f;
+//   float Vb = 0.0;
+
+//   float motor_cmd[4] = {MOTOR_MIN, MOTOR_MIN, MOTOR_MIN, MOTOR_MIN};
+
+//   initVelocityControlZ(&vz_in, KP_VZ, KI_VZ, VZ_OUTPUT_LIMIT);
+
+//   float roll_rate_setpoint = 0.0f;
+//   float pitch_rate_setpoint = 0.0f;
+//   float yaw_rate_setpoint = 0.0f;
+
+//   float ax, ay, az, wx, wy, wz, mx, my, mz;
+
+//   int outer_loop_counter = 0;
+//   int print_counter = 0;
+
+//   // Local variables for telemetry
+//   float R_mix, P_mix, Y_mix;
+
+//   vTaskDelay(pdMS_TO_TICKS(3000));
+
+//   for (;;) {
+//     // Sensor Read (Madgwick + Telemetry)
+//     if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//       ax = MadgwickSensorList[0]; ay = MadgwickSensorList[1]; az = MadgwickSensorList[2];
+//       wx = MadgwickSensorList[3]; wy = MadgwickSensorList[4]; wz = MadgwickSensorList[5];
+//       mx = MadgwickSensorList[6]; my = MadgwickSensorList[7]; mz = MadgwickSensorList[8];
+//       xSemaphoreGive(madgwickMutex);
+//     }
+
+//     MadgwickFilterUpdate(&madData, wx, wy, wz, ax, ay, az, mx, my, mz, dt);
+//     MadgwickGetEuler(&madData);
+
+//     if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//       eulerAngles[0] = madData.roll;
+//       eulerAngles[1] = madData.pitch;
+//       eulerAngles[2] = madData.yaw;
+//       xSemaphoreGive(eulerAnglesMutex);
+//     }
+
+//     roll  = eulerAngles[0] * DEG_TO_RAD;
+//     pitch = eulerAngles[1] * DEG_TO_RAD;
+//     yaw   = eulerAngles[2] * DEG_TO_RAD;
+
+//     rollRate  = wx;
+//     pitchRate = wy;
+//     yawRate   = wz;
+
+//     // User Input
+//     if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//       vz_cmd     = inputList[0];
+//       yawInput   = inputList[1];
+//       pitchInput = inputList[2];
+//       rollInput  = inputList[3];
+
+//       KILL_MOTORS = (inputList[4] != 0.0f);
+//       bool pilot_E_LAND = (inputList[5] != 0.0f);
+
+//       if (!KILL_MOTORS) {
+//         if (pilot_E_LAND || (Vb < 11.1f)) E_LAND = true;
+//         else E_LAND = false;
+//       }
+      
+//       xSemaphoreGive(nRF24Mutex);
+//     }
+
+//     // Telemetry Update
+//     if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//       altitude = telemetry[0];
+//       velocity_z = telemetry[1];
+//       Vb = telemetry[4] / 100.0f;
+
+//       xSemaphoreGive(telemetryMutex);
+//     }
+
+//     // E_LAND Behavior
+//     if (E_LAND && !KILL_MOTORS) {
+//       if (vz_cmd < 0.1f) {
+//         vz_cmd = -0.5f;
+//       }
+//     }
+
+//     if ((flightState == TAKEOFF || flightState == FLYING) && 
+//       (fabsf(roll) > MAX_SAFE_ANGLE_RAD || fabsf(pitch) > MAX_SAFE_ANGLE_RAD)) {
+//       KILL_MOTORS = true;
+//       flightState = DISARMED;
+//     }
+
+//     // ====================== ARMING ======================
+//     bool sticksInArmPosition = (vz_cmd < -0.70f) && (fabsf(pitchInput) > 18.0f * DEG_TO_RAD);
+
+//     if (flightState == DISARMED) {
+//       if (sticksInArmPosition) {
+//         armingTimer += dt;
+//         if (armingTimer >= ARM_HOLD_TIME) {
+//           flightState = ARMED_IDLE;
+//           armingTimer = 0.0f;
+//           tb = 0.0f;
+//           buzz_it(1, 120);
+//           for (int i = 0; i < 4; i++) motor_cmd[i] = 1150.0f;
+//         }
+//       } else {
+//         armingTimer = 0.0f;
+//       }
+//     }
+
+//     // ====================== STATE MACHINE ======================
+//     switch (flightState) {
+//       case DISARMED:
+//         tb = 0.0f;
+//         vz_in.is_flying = 0.0f;
+//         break;
+
+//       case ARMED_IDLE:
+//         tb = 0.0f;
+//         vz_in.is_flying = 0.0f;
+//         if (vz_cmd > -0.70f) { 
+//           flightState = TAKEOFF;
+//           takeoffRamp = 0.0f;
+//         }
+//         break;
+
+//       case TAKEOFF:
+//         vz_in.is_flying = 1.0f;
+//         takeoffRamp += dt * 0.75f;
+//         if (takeoffRamp > 1.0f) takeoffRamp = 1.0f;
+
+//         tb = takeoffRamp * MAX_TB;
+
+//         if (takeoffRamp >= 1.0f && fabsf(velocity_z) < 0.5f) {
+//           flightState = FLYING;
+//         }
+//         break;
+
+//       case FLYING:
+//         vz_in.is_flying = 1.0f;
+//         const float K_GE = 200.0f;
+//         const float GE_THRESHOLD = 1.4f;
+//         const float R_PROP = 0.127f;
+//         float ge_comp = 0.0f;
+
+//         if (altitude < GE_THRESHOLD && E_LAND) {
+//           float z = altitude;
+//           if (z < 0.3) z = 0.3;
+//           ge_comp = K_GE * (R_PROP / z) * (R_PROP / z);
+//         }
+
+//         static float Vb_hover_gain = 40.0f;
+//         tb = HOVER_TB + Vb_hover_gain * (12.6f - Vb) - ge_comp;
+//         break;
+//     }
+
+//     // ====================== FILTERING ======================
+//     emaUpdate(&R_LPF, rollInput);
+//     emaUpdate(&P_LPF, pitchInput);
+//     emaUpdate(&Y_LPF, yawInput);
+//     emaUpdate(&T_LPF, vz_cmd);
+
+//     rollInputFiltered  = constrainFloat(R_LPF.output, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+//     pitchInputFiltered = constrainFloat(P_LPF.output, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+//     yawInputFiltered   = constrainFloat(Y_LPF.output, -YAW_MAX, YAW_MAX);
+//     vz_cmdFiltered     = T_LPF.output;
+
+//     // Attitude outer loop @ 100 Hz
+//     outer_loop_counter++;
+//     if (outer_loop_counter >= 5) {
+//       if ((flightState == TAKEOFF || flightState == FLYING) && vertical_mode == VELOCITY_CONTROL) {
+//         vz_correction = computeVelocityControlZ(&vz_in, vz_cmdFiltered, velocity_z, dt);
+//       }
+//       roll_rate_setpoint  = computeLyGAPID_out(&pidRoll,  rollInputFiltered,  roll,  0.01f);
+//       pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, 0.01f);
+//       outer_loop_counter = 0;
+//     }
+
+//     yaw_rate_setpoint = yawInputFiltered;
+
+//     bool isLanded = (flightState == DISARMED || flightState == ARMED_IDLE);
+//     pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = isLanded ? 1.0f : 0.0f;
+
+//     // Inner loop - Rate PID controllers
+//     R_mix = constrainFloat(computeLyGAPID_in(&pidRollRate, roll_rate_setpoint, rollRate, dt), 
+//                            -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
+//     P_mix = constrainFloat(computeLyGAPID_in(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt), 
+//                            -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
+//     Y_mix = constrainFloat(computeLyGAPID_yaw(&pidYawRate, yaw_rate_setpoint, yawRate, dt), 
+//                            -U_MAX_YAW_RATE, U_MAX_YAW_RATE);
+
+//     float total_throttle = BASE_THROTTLE + tb + vz_correction;
+
+//     if (flightState == TAKEOFF || flightState == FLYING) {
+//       total_throttle = constrainFloat(total_throttle, 1450.0f, 1750.0f);
+//     }
+
+//     // ====================== THESIS TELEMETRY UPDATE ======================
+//     if (xSemaphoreTake(thesisTelemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//       // Control Effort
+//       thesis_telemetry[0] = (int16_t)R_mix;
+//       thesis_telemetry[1] = (int16_t)P_mix;
+//       thesis_telemetry[2] = (int16_t)Y_mix;
+      
+//       // Angles and Rate
+//       thesis_telemetry[3] = (int16_t)(roll * RAD_TO_DEG * 100);      // 0.01° resolution
+//       thesis_telemetry[4] = (int16_t)(pitch * RAD_TO_DEG * 100);
+//       thesis_telemetry[5] = (int16_t)(yawRate * RAD_TO_DEG * 10);    // 0.1 °/s resolution
+      
+//       // Yaw PI Gains
+//       thesis_telemetry[6] = (int16_t)(pidYawRate.Kp * 100);
+//       thesis_telemetry[7] = (int16_t)(pidYawRate.Ki * 100);
+      
+//       // Roll P-PID Gains
+//       thesis_telemetry[8]  = (int16_t)(pidRoll.Kp * 100);
+//       thesis_telemetry[9]  = (int16_t)(pidRollRate.Kp * 100);
+//       thesis_telemetry[10] = (int16_t)(pidRollRate.Ki * 100);
+//       thesis_telemetry[11] = (int16_t)(pidRollRate.Kd * 10000);
+      
+//       // Pitch P-PID Gains
+//       thesis_telemetry[12] = (int16_t)(pidPitch.Kp * 100);
+//       thesis_telemetry[13] = (int16_t)(pidPitchRate.Kp * 100);
+//       thesis_telemetry[14] = (int16_t)(pidPitchRate.Ki * 100);
+//       thesis_telemetry[15] = (int16_t)(pidPitchRate.Kd * 1000);
+      
+//       xSemaphoreGive(thesisTelemetryMutex);
+//     }
+
+//     // Motor Mixer
+//     if (KILL_MOTORS) {
+//       resetLyGAPID(&pidRoll); resetLyGAPID(&pidPitch);
+//       resetLyGAPID(&pidRollRate); resetLyGAPID(&pidPitchRate); resetLyGAPID(&pidYawRate);
+//       kalman_reset(&kalmanState);
+//       flightState = DISARMED;
+//       tb = 0.0f;
+//       vz_in.is_flying = 0.0f;
+//       pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = 1.0f;
+//       for (int i = 0; i < 4; i++) motor_cmd[i] = MOTOR_MIN;
+//     } else {
+//       motor_cmd[0] = total_throttle + R_mix + P_mix - Y_mix;
+//       motor_cmd[1] = total_throttle - R_mix + P_mix + Y_mix;
+//       motor_cmd[2] = total_throttle + R_mix - P_mix + Y_mix;
+//       motor_cmd[3] = total_throttle - R_mix - P_mix - Y_mix;
+//     }
+
+//     for (int i = 0; i < 4; i++) {
+//       motor_cmd[i] = constrainFloat(motor_cmd[i], MOTOR_MIN, MOTOR_MAX);
+//     }
+
+//     // Motor Output
+//     TIM2->CCR1 = (uint16_t)motor_cmd[0];
+//     TIM2->CCR2 = (uint16_t)motor_cmd[1];
+//     TIM2->CCR3 = (uint16_t)motor_cmd[2];
+//     TIM2->CCR4 = (uint16_t)motor_cmd[3];
+
+//     if (++print_counter >= 50) {
+//       print_counter = 0;
+//     }
+
+//     vTaskDelayUntil(&lastWakeTime, interval);
+//   }
+// }
+
+// // RXtask thesis (telemetry): to be tested
+// void RXtask(void* Parameters){
+//     int16_t local_telemetry[16] = {0};
+//     int16_t rx_load[5] = {0, 0, 0, 0, 0};
+//     bool first_packet = true;
+    
+//     initLinkWatchdog();
+//     // radio.startListening();
+    
+//     for (;;) {
+//         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+//         uint8_t flags = radio.clearStatusFlags();
+        
+//         if (flags & RF24_RX_DR) {
+//           while (radio.available()) {
+//             radio.read(rx_load, sizeof(rx_load));
+//             connection_ok = true;
+            
+//             // Reset watchdog
+//             if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) xTimerStart(linkWatchdogTimer, 0);
+//             else xTimerReset(linkWatchdogTimer, 0);
+            
+//             // Process incoming commands (scaling/clamping)
+//             float Tcmd = (float)rx_load[0] / 100.0f; // Expected in the range [-80, 80] -> [-0.8, 0.8] m/s
+//             float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD; // [-90 deg/s, 90 deg/s]
+//             float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
+//             float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
+//             float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
+//             if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//               inputList[0] = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX);
+//               inputList[1] = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX);
+//               inputList[2] = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+//               inputList[3] = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+//               inputList[4] = kill;
+//               xSemaphoreGive(nRF24Mutex);
+//             }
+            
+//             // Prepare ACK for NEXT packet
+//             if (xSemaphoreTake(thesisTelemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//               // for loop
+//               for (int i = 0; i <= 16; i++) local_telemetry[i] = thesis_telemetry[i];
+//               xSemaphoreGive(thesisTelemetryMutex);
+//             }
+              
+//             radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
+//           }
+//         }
+        
+//         // ONLY handle MAX_RT on RX side (rare, but possible)
+//         if (flags & RF24_TX_DF) {
+//             radio.flush_tx(); // Clear stuck ACK payload
+//         }
+//     }
+// }
+///////////////////////////////////////////////////////////////
+
+// deepseek (working, but not very robust)
 void RXtask(void* Parameters){
     int16_t local_telemetry[5] = {0, 0, 0, 0, 0};
     int16_t rx_load[5] = {0, 0, 0, 0, 0};
@@ -750,6 +1511,12 @@ void batteryMonitorTask(void* Parameters){
         xSemaphoreGive(telemetryMutex);
       }
 
+      if (batteryVoltage < 11.0f){
+        buzz_on();
+        vTaskDelay(pdMS_TO_TICKS(10));
+        buzz_off();
+      }
+
       // Serial.print("/Batt: "); Serial.print(batteryVoltage); Serial.println(" V");
       Vb_avg = 0.0f; // reset the voltage
       counter = 0; // reset the counter
@@ -817,19 +1584,19 @@ void freeRTOS_tasks_init(void){
     while (1); // Infinite loop to indicate failure
   }
 
-  // result = xTaskCreate(
-  //   RXtask,
-  //   "nRF24 RX task",
-  //   256,
-  //   NULL,
-  //   PRIORITY_RADIO,
-  //   &radioTaskHandle
-  // );
-  // if (result != pdPASS) {
-  //   // Handle task creation failure
-  //   Serial.println("Failed to create RXtask");
-  //   while (1); // Infinite loop to indicate failure
-  // }
+  result = xTaskCreate(
+    RXtask,
+    "nRF24 RX task",
+    256,
+    NULL,
+    PRIORITY_RADIO,
+    &radioTaskHandle
+  );
+  if (result != pdPASS) {
+    // Handle task creation failure
+    Serial.println("Failed to create RXtask");
+    while (1); // Infinite loop to indicate failure
+  }
 
   result = xTaskCreate(
     batteryMonitorTask,
@@ -854,9 +1621,11 @@ void freeRTOS_tasks_init(void){
 // - [y] test rod 
 // - [y] fix the radio connectivity issue
 // - [y] real test flight (assisted) 
-// - [x] fix landing issue
+// - [x] fix vertical control performance (estimation and controller tuning)
 // - [x] real test flight (tethered) 
 // - [x] free flight
 // - [x] test flight with payload (varying/sloshing)
 
-// - [x] data extraction
+// - [x] cpu load data extraction
+
+// - [x] data extraction flight test (static PID and LyGAPID: 4 runs: with & w/out sloshing)

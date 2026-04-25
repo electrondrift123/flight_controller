@@ -14,6 +14,9 @@ extern SemaphoreHandle_t eulerAnglesMutex;
 extern SemaphoreHandle_t nRF24Mutex;
 extern SemaphoreHandle_t telemetryMutex;
 
+// thesis
+extern SemaphoreHandle_t thesisTelemetryMutex;
+
 // Task Handles
 extern TaskHandle_t radioTaskHandle;
 

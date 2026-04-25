@@ -54,19 +54,19 @@ void setup() {
   // delay(60000); // 60 sec
   // ////////// END
 
-  // if (!main_rx_init()){
-  //   Serial.println("Error initializing main_rx");
-  //   // buzz_on();
-  //   while (1){
-  //     buzz_on();
-  //     delay(500);
-  //     buzz_off();
-  //     delay(500);
-  //   }
-  // } // Initialize nRF24 radio
+  if (!main_rx_init()){
+    Serial.println("Error initializing main_rx");
+    // buzz_on();
+    while (1){
+      buzz_on();
+      delay(500);
+      buzz_off();
+      delay(500);
+    }
+  } // Initialize nRF24 radio
  
   // === PID CONTROLLER INITIALIZATION ===
-  // angle mode ======  NOT YET TUNED & TESTED!
+  // angle mode 
 
   // outer loop: P-controller for roll, pitch, yaw angles (unit: rad)
   initLyGAPID(&pidRoll,  P, 0.0f, 0.0f, B_SIGN, GAMMA_B, SIGMA, U_MAX_ROLL, CONTROLLER_MODE);
@@ -91,16 +91,6 @@ void loop() {
   // empty
   // Do not put vTaskDelay() or any other blocking code here!!!
 }
-
-//// TODO:
-// 1. debug the PID logic: map the torque comman into pwm ticks!
-
-// Note: 
-// - The output ticks for every motor is 1ms
-
-
-// NOTE:
-// 1. input from human: deg, then convert it into rad
 
 
  

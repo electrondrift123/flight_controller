@@ -37,6 +37,8 @@
 #define B_SIGN          1.0f
 #define CONTROLLER_MODE 1.0f // 0 = adaptive, 1 = static
 
+// #define THESIS_MODE 0.0f // 0 = not, 1 = thesis mode
+
 // Initial P-PID Gains:
 #define P   3.0f
 
@@ -51,7 +53,7 @@
 #define PITCH_ROLL_MAX      PI / 6.0f   // 30 deg max cmd
 
 // failsafe (extreme tilt) -> kill motors
-#define MAX_SAFE_ANGLE_RAD 80.0f * DEG_TO_RAD
+#define MAX_SAFE_ANGLE_RAD 75.0f * DEG_TO_RAD
 
 // Global shared sensor data
 extern mpu6050Data_t mpuData;
@@ -101,7 +103,7 @@ extern EMA_t vzLPF;
 
 extern EMA_t d_filter;
 
-extern EMA_t azWorldLPF;
+extern EMA_t azTrueLPF;
 
 // voltage monitor
 extern EMA_t VbLPF;
@@ -125,6 +127,8 @@ extern volatile float eulerAngles[3];
 
 extern volatile float inputList[8]; // [T, Y, P, R, KILL, E-land, sigma, learning rate] // to receive
 extern volatile float telemetry[5]; //now: [alt, Vz, _, _, Vb] 
+
+extern volatile int16_t thesis_telemetry[16]; 
 
 // from sensor reading task
 extern volatile float MadgwickSensorList[9];
