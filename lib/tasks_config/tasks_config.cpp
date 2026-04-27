@@ -1420,66 +1420,66 @@ void PIDtask(void* Parameters) {
 // }
 ///////////////////////////////////////////////////////////////
 
-// deepseek (working, but not very robust)
-void RXtask(void* Parameters){
-    int16_t local_telemetry[5] = {0, 0, 0, 0, 0};
-    int16_t rx_load[5] = {0, 0, 0, 0, 0};
-    bool first_packet = true;
+// // deepseek (working, but not very robust)
+// void RXtask(void* Parameters){
+//     int16_t local_telemetry[5] = {0, 0, 0, 0, 0};
+//     int16_t rx_load[5] = {0, 0, 0, 0, 0};
+//     bool first_packet = true;
     
-    initLinkWatchdog();
-    // radio.startListening();
+//     initLinkWatchdog();
+//     // radio.startListening();
     
-    for (;;) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        uint8_t flags = radio.clearStatusFlags();
+//     for (;;) {
+//         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+//         uint8_t flags = radio.clearStatusFlags();
         
-        if (flags & RF24_RX_DR) {
-          while (radio.available()) {
-            radio.read(rx_load, sizeof(rx_load));
-            connection_ok = true;
+//         if (flags & RF24_RX_DR) {
+//           while (radio.available()) {
+//             radio.read(rx_load, sizeof(rx_load));
+//             connection_ok = true;
             
-            // Reset watchdog
-            if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) xTimerStart(linkWatchdogTimer, 0);
-            else xTimerReset(linkWatchdogTimer, 0);
+//             // Reset watchdog
+//             if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) xTimerStart(linkWatchdogTimer, 0);
+//             else xTimerReset(linkWatchdogTimer, 0);
             
-            // Process incoming commands (scaling/clamping)
-            float Tcmd = (float)rx_load[0] / 100.0f; // Expected in the range [-80, 80] -> [-0.8, 0.8] m/s
-            float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD; // [-90 deg/s, 90 deg/s]
-            float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
-            float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
-            float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
-            if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-              inputList[0] = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX);
-              inputList[1] = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX);
-              inputList[2] = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-              inputList[3] = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-              inputList[4] = kill;
-              xSemaphoreGive(nRF24Mutex);
-            }
+//             // Process incoming commands (scaling/clamping)
+//             float Tcmd = (float)rx_load[0] / 100.0f; // Expected in the range [-80, 80] -> [-0.8, 0.8] m/s
+//             float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD; // [-90 deg/s, 90 deg/s]
+//             float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
+//             float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
+//             float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
+//             if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//               inputList[0] = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX);
+//               inputList[1] = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX);
+//               inputList[2] = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+//               inputList[3] = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+//               inputList[4] = kill;
+//               xSemaphoreGive(nRF24Mutex);
+//             }
             
-            // Prepare ACK for NEXT packet
-            if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-              local_telemetry[0] = (int16_t) eulerAngles[0];
-              local_telemetry[1] = (int16_t) eulerAngles[1];
-              local_telemetry[2] = (int16_t) eulerAngles[2];
-              xSemaphoreGive(eulerAnglesMutex);
-            }
-            if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-              local_telemetry[3] = (int16_t) (telemetry[0] * 100.0f);
-              local_telemetry[4] = (int16_t) telemetry[4];
-              xSemaphoreGive(telemetryMutex);
-            }
+//             // Prepare ACK for NEXT packet
+//             if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//               local_telemetry[0] = (int16_t) eulerAngles[0];
+//               local_telemetry[1] = (int16_t) eulerAngles[1];
+//               local_telemetry[2] = (int16_t) eulerAngles[2];
+//               xSemaphoreGive(eulerAnglesMutex);
+//             }
+//             if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//               local_telemetry[3] = (int16_t) (telemetry[0] * 100.0f);
+//               local_telemetry[4] = (int16_t) telemetry[4];
+//               xSemaphoreGive(telemetryMutex);
+//             }
               
-            radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
-          }
-        }
+//             radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
+//           }
+//         }
         
-        // ONLY handle MAX_RT on RX side (rare, but possible)
-        if (flags & RF24_TX_DF) {
-            radio.flush_tx(); // Clear stuck ACK payload
-        }
-    }
-}
+//         // ONLY handle MAX_RT on RX side (rare, but possible)
+//         if (flags & RF24_TX_DF) {
+//             radio.flush_tx(); // Clear stuck ACK payload
+//         }
+//     }
+// }
 
 //// TODO: find ADC pin for this task (12 bit res: [12.6V: 2544, 11.4V: ?])
 void batteryMonitorTask(void* Parameters){
