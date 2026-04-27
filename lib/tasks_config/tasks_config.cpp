@@ -1364,61 +1364,158 @@ void PIDtask(void* Parameters) {
 //   }
 // }
 
-// // RXtask thesis (telemetry): to be tested
-// void RXtask(void* Parameters){
-//     int16_t local_telemetry[16] = {0};
-//     int16_t rx_load[5] = {0, 0, 0, 0, 0};
-//     bool first_packet = true;
+// // RXtask thesis (telemetry): testing....
+// RXtask (thesis) - FIXED VERSION (minimal changes)
+void RXtask(void* Parameters){
+    int16_t local_telemetry[16] = {0};  // ACK payload
+    int16_t rx_load[5] = {0, 0, 0, 0, 0};
     
-//     initLinkWatchdog();
-//     // radio.startListening();
+    initLinkWatchdog();
     
-//     for (;;) {
-//         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-//         uint8_t flags = radio.clearStatusFlags();
+    // CRITICAL: Pre-load initial ACK payload
+    radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
+    
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        uint8_t flags = radio.clearStatusFlags();
         
-//         if (flags & RF24_RX_DR) {
-//           while (radio.available()) {
-//             radio.read(rx_load, sizeof(rx_load));
-//             connection_ok = true;
-            
-//             // Reset watchdog
-//             if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) xTimerStart(linkWatchdogTimer, 0);
-//             else xTimerReset(linkWatchdogTimer, 0);
-            
-//             // Process incoming commands (scaling/clamping)
-//             float Tcmd = (float)rx_load[0] / 100.0f; // Expected in the range [-80, 80] -> [-0.8, 0.8] m/s
-//             float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD; // [-90 deg/s, 90 deg/s]
-//             float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
-//             float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
-//             float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
-//             if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//               inputList[0] = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX);
-//               inputList[1] = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX);
-//               inputList[2] = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//               inputList[3] = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//               inputList[4] = kill;
-//               xSemaphoreGive(nRF24Mutex);
-//             }
-            
-//             // Prepare ACK for NEXT packet
-//             if (xSemaphoreTake(thesisTelemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//               // for loop
-//               for (int i = 0; i <= 16; i++) local_telemetry[i] = thesis_telemetry[i];
-//               xSemaphoreGive(thesisTelemetryMutex);
-//             }
-              
-//             radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
-//           }
-//         }
+        if (flags & RF24_RX_DR) {
+            while (radio.available()) {
+                // Write ACK payload BEFORE read (already correct)
+                radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
+                
+                // Small delay for PA/LNA module stability (optional, keep if needed)
+                delayMicroseconds(100);
+                
+                // Read incoming data
+                radio.read(rx_load, sizeof(rx_load));
+                
+                // ★★★ THE FIX - Add this one line ★★★
+                radio.startListening();  // Force back to RX mode after ACK
+                
+                connection_ok = true;
+                
+                // Reset watchdog
+                if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
+                    xTimerStart(linkWatchdogTimer, 0);
+                } else {
+                    xTimerReset(linkWatchdogTimer, 0);
+                }
+                
+                // Process incoming commands
+                float Tcmd = (float)rx_load[0] / 100.0f;
+                float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD;
+                float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
+                float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
+                float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
+                
+                if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+                    inputList[0] = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX);
+                    inputList[1] = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX);
+                    inputList[2] = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+                    inputList[3] = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+                    inputList[4] = kill;
+                    xSemaphoreGive(nRF24Mutex);
+                }
+                
+                // Prepare ACK payload for NEXT packet
+                if (xSemaphoreTake(thesisTelemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+                    for (int i = 0; i < 16; i++) {
+                        local_telemetry[i] = thesis_telemetry[i];
+                    }
+                    xSemaphoreGive(thesisTelemetryMutex);
+                }
+            }
+        }
         
-//         // ONLY handle MAX_RT on RX side (rare, but possible)
-//         if (flags & RF24_TX_DF) {
-//             radio.flush_tx(); // Clear stuck ACK payload
-//         }
-//     }
-// }
+        // Handle MAX_RT if it occurs
+        if (flags & RF24_TX_DF) {
+            radio.flush_tx();
+        }
+    }
+}
 ///////////////////////////////////////////////////////////////
+
+// // dummy 1
+// void RXtask(void* Parameters){
+//   // reply: roll, pitch, yaw, alt, rad status, 2{P, kp, ki, kd}, {Kp, Ki, Kd}
+//   // 32 bytes nRF24 max can handle, sent:  32 bytes, int16 = 2 bytes
+//   int16_t local_telemetry[5] = {20, 20, 20, 20, 10}; 
+//   int16_t rx_load[5] = {20, 20, 20, 20, 30};
+
+//   int counter_print = 0;
+
+
+//   // init failsafe radio link
+//   initLinkWatchdog();
+
+//   // Start killed
+//   connection_ok = false;
+
+//   for (;;) {
+//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+//     // Read + clear status flags
+//     uint8_t flags = radio.clearStatusFlags();
+
+//     // Handle data ready
+//     if (flags & RF24_RX_DR) {
+//       while (radio.available()) {
+//         // We are alive!
+//         connection_ok = true;
+//         Serial.println("help");
+
+//         // Restart watchdog (this is the magic line)
+//         // Critical: Start or restart watchdog
+//         if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
+//           xTimerStart(linkWatchdogTimer, 0);
+//         } else {
+//           xTimerReset(linkWatchdogTimer, 0);
+//         }
+
+       
+//         // Write ACK payload BEFORE read
+//         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
+        
+//         // Read incoming data
+//         radio.read(rx_load, sizeof(rx_load));
+        
+//         radio.startListening();
+
+//         if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//           Serial.print("[nRF24 RX] Received: ");
+//           for (int i = 0; i <= 3; i++) {
+//             Serial.print(rx_load[i]); Serial.print(", ");
+//           }
+//           Serial.println(rx_load[4]);
+//           xSemaphoreGive(serialMutex);
+//         }
+
+//         // // 2. update the data in inputList with mutex
+//         // if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {  
+//         //   inputList[0] = Tcmd; // update throttle
+//         //   inputList[1] = Ycmd; // update yaw
+//         //   inputList[2] = Pcmd; // update pitch
+//         //   inputList[3] = Rcmd; // update roll
+//         //   inputList[4] = killcmd; // update kill flag in inputList
+//         //   inputList[5] = e_landing; // Emergency landing flag
+
+//         //   // temporary for analysis: roll only
+//         //   inputList[6] = sigma; 
+//         //   inputList[7] = gamma;
+//         //   xSemaphoreGive(nRF24Mutex);
+//         // }
+
+//       }
+//     }
+
+//     // Optional: catch abnormal TX_ACK behavior
+//     if (flags & 0x10) {
+//       radio.flush_tx();  // clear stuck packet
+//     }
+//   }
+// }
+
 
 // // deepseek (working, but not very robust)
 // void RXtask(void* Parameters){
