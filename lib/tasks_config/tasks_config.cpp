@@ -81,6 +81,42 @@ bool sensorsReady(){
   return BMP280_read(&bmpData) && MPU6050_read(&mpuData) && QMC5883P_read(&magData);
 }
 
+void fastRadioRecoverRX() {
+    // Stop listening first
+    radio.stopListening();
+    
+    // Soft power cycle (fastest reliable recovery)
+    radio.powerDown();
+    vTaskDelay(pdMS_TO_TICKS(2));        // Give it time to fully shut down
+    
+    radio.powerUp();
+    vTaskDelay(pdMS_TO_TICKS(3));        // tpd2stby is ~1.5-2ms, we give margin
+    
+    // Re-apply critical settings (minimal but important)
+    radio.flush_rx();
+    radio.flush_tx();
+    
+    radio.setPALevel(RF24_PA_HIGH);
+    radio.setDataRate(RF24_250KBPS);
+    radio.setChannel(108);
+    radio.setCRCLength(RF24_CRC_16);
+    
+    radio.enableDynamicPayloads();
+    radio.enableAckPayload();
+    
+    // Re-open pipe
+    radio.openReadingPipe(PIPE_INDEX, address[0]);
+    
+    // Pre-load a dummy ACK (optional but helps)
+    // int16_t dummy[6] = {0};
+    // radio.writeAckPayload(PIPE_INDEX, dummy, sizeof(dummy));
+    
+    radio.startListening();
+    
+    // Optional: clear any pending interrupts
+    radio.clearStatusFlags();   // or radio.maskIRQ(1,1,1); then re-enable
+}
+
 // === Timer callback (runs in timer task context!) ===
 static void linkTimeoutCallback(TimerHandle_t xTimer){
   (void) xTimer;
@@ -95,7 +131,10 @@ static void linkTimeoutCallback(TimerHandle_t xTimer){
   inputList[3] = 0.0f;
   if (inputList[4] == 0.0f) inputList[5] = 1.0f;   // set E-landing flag;   
   taskEXIT_CRITICAL();
+
+  fastRadioRecoverRX();
 }
+
 void initLinkWatchdog(void){
   if (linkWatchdogTimer != NULL) {
     // already created → avoid double creation
@@ -1217,97 +1256,174 @@ void PIDtask(void* Parameters) {
 // }
 
 
-void RXtask(void* Parameters){
-  // reply: roll, pitch, yaw, alt, rad status, 2{P, kp, ki, kd}, {Kp, Ki, Kd}
-  // 32 bytes nRF24 max can handle, sent:  32 bytes, int16 = 2 bytes
-  int16_t local_telemetry[6] = {0}; 
-  int16_t rx_load[5] = {0, 0, 0, 0, 1};
+// void RXtask(void* Parameters){
+//   // reply: roll, pitch, yaw, alt, rad status, 2{P, kp, ki, kd}, {Kp, Ki, Kd}
+//   // 32 bytes nRF24 max can handle, sent:  32 bytes, int16 = 2 bytes
+//   int16_t local_telemetry[6] = {0}; 
+//   int16_t rx_load[5] = {0, 0, 0, 0, 1};
 
-  int counter_print = 0;
+//   int counter_print = 0;
 
 
-  // init failsafe radio link
-  initLinkWatchdog();
+//   // init failsafe radio link
+//   initLinkWatchdog();
 
-  // Start killed
-  connection_ok = false;
+//   // Start killed
+//   connection_ok = false;
 
-  for (;;) {
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+//   for (;;) {
+//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-    // Read + clear status flags
-    uint8_t flags = radio.clearStatusFlags();
+//     // Read + clear status flags
+//     uint8_t flags = radio.clearStatusFlags();
 
-    // Handle data ready
-    if (flags & RF24_RX_DR) {
-      while (radio.available()) {
-        // We are alive!
-        connection_ok = true;
+//     // Handle data ready
+//     if (flags & RF24_RX_DR) {
+//       while (radio.available()) {
+//         // We are alive!
+//         connection_ok = true;
 
-        // Restart watchdog (this is the magic line)
-        // Critical: Start or restart watchdog
-        if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
-          xTimerStart(linkWatchdogTimer, 0);
-        } else {
-          xTimerReset(linkWatchdogTimer, 0);
-        }
+//         // Restart watchdog (this is the magic line)
+//         // Critical: Start or restart watchdog
+//         if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
+//           xTimerStart(linkWatchdogTimer, 0);
+//         } else {
+//           xTimerReset(linkWatchdogTimer, 0);
+//         }
 
-        // access telemetry data for ACK payload
-        if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-          local_telemetry[0] = (int16_t) eulerAngles[0];
-          local_telemetry[1] = (int16_t) eulerAngles[1];
-          local_telemetry[2] = (int16_t) eulerAngles[2];
-          xSemaphoreGive(eulerAnglesMutex);
-        }
-        if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-          local_telemetry[3] = (int16_t) (telemetry[0] * 100.0f);
-          local_telemetry[4] = (int16_t) telemetry[4];
-          local_telemetry[5] = (int16_t) (telemetry[1] * 100.0f); // velocity_z
-          xSemaphoreGive(telemetryMutex);
-        }
+//         // access telemetry data for ACK payload
+//         if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//           local_telemetry[0] = (int16_t) eulerAngles[0];
+//           local_telemetry[1] = (int16_t) eulerAngles[1];
+//           local_telemetry[2] = (int16_t) eulerAngles[2];
+//           xSemaphoreGive(eulerAnglesMutex);
+//         }
+//         if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//           local_telemetry[3] = (int16_t) (telemetry[0] * 100.0f);
+//           local_telemetry[4] = (int16_t) telemetry[4];
+//           local_telemetry[5] = (int16_t) (telemetry[1] * 100.0f); // velocity_z
+//           xSemaphoreGive(telemetryMutex);
+//         }
 
-        // Write ACK payload BEFORE read
-        radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
+//         // Write ACK payload BEFORE read
+//         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
         
-        // Read incoming data
-        radio.read(rx_load, sizeof(rx_load));
+//         // Read incoming data
+//         radio.read(rx_load, sizeof(rx_load));
         
-        radio.startListening();
+//         radio.startListening();
 
-        // if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-        //   Serial.print("[nRF24 RX] Received: ");
-        //   for (int i = 0; i <= 3; i++) {
-        //     Serial.print(rx_load[i]); Serial.print(", ");
-        //   }
-        //   Serial.println(rx_load[4]);
-        //   xSemaphoreGive(serialMutex);
-        // }
+//         // if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//         //   Serial.print("[nRF24 RX] Received: ");
+//         //   for (int i = 0; i <= 3; i++) {
+//         //     Serial.print(rx_load[i]); Serial.print(", ");
+//         //   }
+//         //   Serial.println(rx_load[4]);
+//         //   xSemaphoreGive(serialMutex);
+//         // }
 
-        // Process incoming commands
-        float Tcmd = (float)rx_load[0] / 100.0f;
-        float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD;
-        float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
-        float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
-        float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
+//         // Process incoming commands
+//         float Tcmd = (float)rx_load[0] / 100.0f;
+//         float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD;
+//         float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
+//         float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
+//         float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
         
-        if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-            inputList[0] = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX);
-            inputList[1] = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX);
-            inputList[2] = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-            inputList[3] = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-            inputList[4] = kill;
-            xSemaphoreGive(nRF24Mutex);
+//         if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+//             inputList[0] = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX);
+//             inputList[1] = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX);
+//             inputList[2] = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+//             inputList[3] = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+//             inputList[4] = kill;
+//             xSemaphoreGive(nRF24Mutex);
+//         }
+
+//       }
+//     }
+
+//     // Optional: catch abnormal TX_ACK behavior
+//     if (flags & 0x10) {
+//       radio.flush_tx();  // clear stuck packet
+//     }
+//   }
+// }
+
+void RXtask(void* Parameters) {
+    int16_t local_telemetry[6] = {0}; 
+    int16_t rx_load[5] = {0};
+
+    initLinkWatchdog();
+    connection_ok = false;
+
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        uint8_t flags = radio.clearStatusFlags();   // or radio.getStatus() if you prefer
+
+        if (flags & RF24_RX_DR) {
+            while (radio.available()) {
+                connection_ok = true;
+
+                // Restart watchdog
+                if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
+                    xTimerStart(linkWatchdogTimer, 0);
+                } else {
+                    xTimerReset(linkWatchdogTimer, 0);
+                }
+
+                // Prepare ACK payload
+                if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+                    local_telemetry[0] = (int16_t)eulerAngles[0];
+                    local_telemetry[1] = (int16_t)eulerAngles[1];
+                    local_telemetry[2] = (int16_t)eulerAngles[2];
+                    xSemaphoreGive(eulerAnglesMutex);
+                }
+                if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+                    local_telemetry[3] = (int16_t)(telemetry[0] * 100.0f);
+                    local_telemetry[4] = (int16_t)telemetry[4];
+                    local_telemetry[5] = (int16_t)(telemetry[1] * 100.0f);
+                    xSemaphoreGive(telemetryMutex);
+                }
+
+                radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
+
+                radio.read(rx_load, sizeof(rx_load));
+
+                // Process commands...
+                float Tcmd = (float)rx_load[0] / 100.0f;
+                float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD;
+                float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
+                float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
+                float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
+
+                if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
+                    inputList[0] = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX);
+                    inputList[1] = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX);
+                    inputList[2] = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+                    inputList[3] = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+                    inputList[4] = kill;
+                    xSemaphoreGive(nRF24Mutex);
+                }
+            }
         }
 
-      }
+        // Handle TX FIFO issues (MAX_RT flag)
+        if (flags & 0x10) {
+            radio.flush_tx();
+        }
+
+        // === NEW: Periodic recovery check ===
+        static uint32_t lastRecoverCheck = 0;
+        if (xTaskGetTickCount() - lastRecoverCheck > pdMS_TO_TICKS(200)) {
+            lastRecoverCheck = xTaskGetTickCount();
+            
+            if (!connection_ok) {
+                fastRadioRecoverRX();     // <--- Add this
+            }
+        }
     }
-
-    // Optional: catch abnormal TX_ACK behavior
-    if (flags & 0x10) {
-      radio.flush_tx();  // clear stuck packet
-    }
-  }
 }
+
 
 void batteryMonitorTask(void* Parameters){
   TickType_t interval = pdMS_TO_TICKS(20);
