@@ -32,10 +32,10 @@
 #define U_MAX_YAW_RATE      100.0f
 
 // Adaptive PID config: 
-#define GAMMA_B         0.001f
-#define SIGMA           0.001f
+#define GAMMA_B         100.0f
+#define SIGMA           0.0001f
 #define B_SIGN          1.0f
-#define CONTROLLER_MODE 0.0f // 0 = adaptive, 1 = static
+#define CONTROLLER_MODE 1.0f // 0 = adaptive, 1 = static
 
 // #define THESIS_MODE 0.0f // 0 = not, 1 = thesis mode
 
@@ -43,7 +43,7 @@
 #define P   3.0f
 
 #define KP  50.0f
-#define KI  15.0f
+#define KI  10.0f // was 15
 #define KD  0.005f
 
 // MAX commands in float: 

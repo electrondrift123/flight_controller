@@ -112,7 +112,7 @@ float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float 
         // Adaptation
         float gamma_p = lygapid->gamma_base;
         float gamma_i = lygapid->gamma_base;
-        float gamma_d = lygapid->gamma_base;
+        float gamma_d = lygapid->gamma_base * 0.0001f;
 
         float dKp = gamma_p * lygapid->b_sign * error * error - lygapid->sigma * gamma_p * lygapid->Kp;
         float dKi = gamma_i * lygapid->b_sign * lygapid->integral * error - lygapid->sigma * gamma_i * lygapid->Ki;
@@ -133,7 +133,7 @@ float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float 
     }
     else if (lygapid->mode == 1.0f){
         lygapid->Kp = KP_MIN; // fixed high Kp for output control
-        lygapid->Ki = KI_MAX / 2.0f; // fixed high Kp for output control
+        lygapid->Ki = KI_MAX / 3.0f; // was 2.0f // fixed high Kp for output control
         lygapid->Kd = 0.005f; // fixed high Kp for output control
     }
 
@@ -148,9 +148,6 @@ float computeLyGAPID_yaw(LyGAPIDControllerData_t* lygapid, float setpoint, float
     bool reducing_error = (error * u_ < 0);
 
     // integral update (Anti-windup)
-    // if (!saturated || reducing_error){
-    //     lygapid->integral += error * dt;
-    // }
     if (!saturated && (lygapid->landed < 1.0f)){ // not sat, not landed
         lygapid->integral += error * dt;
     }else if (lygapid->landed >= 1.0f) lygapid->integral = 0.0f; // reset integral when landed
@@ -188,10 +185,10 @@ float computeLyGAPID_yaw(LyGAPIDControllerData_t* lygapid, float setpoint, float
         lygapid->Ki += dKi * dt;
 
         if (lygapid->Kp > KP_MAX) lygapid->Kp = KP_MAX; // clamp
-        else if (lygapid->Kp < 25.0f) lygapid->Kp = 25.0f;
+        else if (lygapid->Kp < KP_MIN) lygapid->Kp = KP_MIN;
 
         if (lygapid->Ki > KI_MAX) lygapid->Ki = KI_MAX; // clamp
-        else if (lygapid->Ki < 10.0f) lygapid->Ki = 10.0f;
+        else if (lygapid->Ki < KI_MIN) lygapid->Ki = KI_MIN;
     }
     else if (lygapid->mode == 1.0f){
         lygapid->Kp = KP_MIN * 0.80f; // fixed low Kp for yaw control

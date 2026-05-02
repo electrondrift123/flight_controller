@@ -192,6 +192,42 @@ bool BMP280_read(bmp280Data_t *data) {
     return true;
 }
 
+// average
+// bool BMP280_read(bmp280Data_t *data) {
+//     if (data == NULL) return false;
+    
+//     uint32_t adc_P, adc_T;
+//     float pressure, temperature;
+    
+//     // Read single sample
+//     if (!readRawData(&adc_P, &adc_T)) return false;
+//     if (!calculatePressureTemp(adc_P, adc_T, &pressure, &temperature)) return false;
+    
+//     // Add to rolling buffer
+//     pressure_buffer[buffer_index] = pressure;
+//     buffer_index = (buffer_index + 1) % AVG_WINDOW_SIZE;
+//     if (buffer_index == 0) buffer_filled = true;
+    
+//     // Calculate average
+//     float sum_pressure = 0;
+//     int num_samples = buffer_filled ? AVG_WINDOW_SIZE : buffer_index;
+//     for (int i = 0; i < num_samples; i++) {
+//         sum_pressure += pressure_buffer[i];
+//     }
+//     float avg_pressure = sum_pressure / num_samples;
+    
+//     // Calculate altitude from averaged pressure
+//     float altitude_m = calculateAltitude(avg_pressure);
+//     float relative_altitude_m = altitude_m - altitudeReference;
+    
+//     data->pressure = avg_pressure;
+//     data->temperature = temperature;  // Optionally average temp too
+//     data->altitude = relative_altitude_m;
+//     rawAltitude = altitude_m;
+    
+//     return true;
+// }
+
 float BMP280_get_raw_altitude(void) {
     return rawAltitude;
 }

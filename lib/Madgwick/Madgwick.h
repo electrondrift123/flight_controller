@@ -26,7 +26,10 @@ typedef struct {
 
 
 // Initialize the filter (optional default values)
-void Madgwick_init(MadgwickData_t* filterData, float sampleRateHz);
+// void Madgwick_init(MadgwickData_t* filterData, float sampleRateHz);
+
+void Madgwick_resetState(void);
+void Madgwick_initFromSensors(float ax, float ay, float az, float wx, float wy, float wz);
 
 // Update the filter with new sensor data
 void MadgwickFilterUpdate(MadgwickData_t* filterData,

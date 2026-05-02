@@ -5,6 +5,13 @@
 
 #define BMP280_ADDRESS 0x76
 
+////
+#define AVG_WINDOW_SIZE 10 // was 10
+static float pressure_buffer[AVG_WINDOW_SIZE];
+static int buffer_index = 0;
+static bool buffer_filled = false;
+////
+
 typedef struct {
     float pressure;      // Pressure in hPa
     float temperature;   // Temperature in °C

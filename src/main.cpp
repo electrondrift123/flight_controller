@@ -49,7 +49,7 @@ void setup() {
 
   // ///// ESC calibration procedure:
   // TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 2000;
-  // delay(20000); // 10 sec
+  // delay(10000); // 10 sec
   // TIM2->CCR1 = TIM2->CCR2 = TIM2->CCR3 = TIM2->CCR4 = 1000;
   // delay(60000); // 60 sec
   // ////////// END

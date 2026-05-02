@@ -88,7 +88,7 @@ bool main_rx_init(void){
   radio.flush_tx();
   Serial.println("radio initialized!");
   // --- RADIO SETTINGS TO MATCH TX ---
-  radio.setPALevel(RF24_PA_MAX); // Use LOW or MAX (depending on power)
+  radio.setPALevel(RF24_PA_HIGH); // Use LOW or MAX (depending on power)
   // radio.setDataRate(RF24_1MBPS); // MATCH: must match TX
   radio.setDataRate(RF24_250KBPS); // MATCH: must match TX
   radio.setChannel(108); // MATCH: must match TX

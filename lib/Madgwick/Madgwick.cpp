@@ -11,6 +11,61 @@ float b_x = 1, b_z = 0;    // reference direction of flux in earth frame
 
 float w_bx = 0, w_by = 0, w_bz = 0;  // estimate gyroscope biases error
 
+void Madgwick_resetState(void) {
+    // Reset quaternion to level, no rotation
+    SEq_1 = 1.0f;
+    SEq_2 = 0.0f;
+    SEq_3 = 0.0f;
+    SEq_4 = 0.0f;
+    
+    // Reset magnetic reference
+    b_x = 1.0f;
+    b_z = 0.0f;
+    
+    // Reset gyro bias
+    w_bx = 0.0f;
+    w_by = 0.0f;
+    w_bz = 0.0f;
+}
+
+void Madgwick_initFromSensors(float ax, float ay, float az, float wx, float wy, float wz) {
+    // Normalize accelerometer
+    float norm = sqrtf(ax*ax + ay*ay + az*az);
+    if (norm < 0.001f) {
+        Madgwick_resetState();
+        return;
+    }
+    ax /= norm;
+    ay /= norm;
+    az /= norm;
+    
+    // USE THE SAME MATH AS YOUR MPU6050 angle calculations
+    // This ensures consistency with your existing tested code
+    float roll = atan2f(ay, sqrtf(ax*ax + az*az));
+    float pitch = atan2f(-ax, sqrtf(ay*ay + az*az));
+    
+    // Convert Euler to quaternion
+    float cosRoll = cosf(roll * 0.5f);
+    float sinRoll = sinf(roll * 0.5f);
+    float cosPitch = cosf(pitch * 0.5f);
+    float sinPitch = sinf(pitch * 0.5f);
+    
+    // Standard aerospace quaternion (roll then pitch)
+    SEq_1 = cosRoll * cosPitch;
+    SEq_2 = sinRoll * cosPitch;
+    SEq_3 = cosRoll * sinPitch;
+    SEq_4 = sinRoll * sinPitch;
+    
+    // Set initial gyro bias estimates
+    w_bx = wx;
+    w_by = wy;
+    w_bz = wz;
+    
+    // Reset magnetic reference
+    b_x = 1.0f;
+    b_z = 0.0f;
+}
+
 // Function to compute one filter iteration
 void MadgwickFilterUpdate(MadgwickData_t* filterData, float w_x, float w_y, float w_z, float a_x, float a_y, float a_z, float m_x, float m_y, float m_z, float deltat)
 {
