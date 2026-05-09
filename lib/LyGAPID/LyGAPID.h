@@ -2,6 +2,7 @@
 #define LYGAPID
 
 #include <Arduino.h>
+#include "EMA.h"
 
 // empirical known good static P-PID gains: 3, 50, 15, 0.005 (Static PID v0)
 // LyGAPID v0 Flying: Kpo [3,4], Kp [50, 60], Ki [15, 30], Kd [0.005, 0.025], gamma = sigma = 0.001  (LyGAPID v0 <= Static PID v0)
@@ -33,6 +34,8 @@ typedef struct {
 
     float mode; // 0 = adaptive, 1 = static
     float landed; // 1 = true
+
+    EMA_t pidLPF; // PT1 LPF filter for D-term
 
 } LyGAPIDControllerData_t;
 

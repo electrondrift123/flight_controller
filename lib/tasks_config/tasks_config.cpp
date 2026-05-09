@@ -82,39 +82,19 @@ bool sensorsReady(){
 }
 
 void fastRadioRecoverRX() {
-    // Stop listening first
-    radio.stopListening();
-    
-    // Soft power cycle (fastest reliable recovery)
-    radio.powerDown();
-    vTaskDelay(pdMS_TO_TICKS(2));        // Give it time to fully shut down
-    
-    radio.powerUp();
-    vTaskDelay(pdMS_TO_TICKS(3));        // tpd2stby is ~1.5-2ms, we give margin
-    
-    // Re-apply critical settings (minimal but important)
-    radio.flush_rx();
-    radio.flush_tx();
-    
-    radio.setPALevel(RF24_PA_HIGH);
-    radio.setDataRate(RF24_250KBPS);
-    radio.setChannel(108);
-    radio.setCRCLength(RF24_CRC_16);
-    
-    radio.enableDynamicPayloads();
-    radio.enableAckPayload();
-    
-    // Re-open pipe
-    radio.openReadingPipe(PIPE_INDEX, address[0]);
-    
-    // Pre-load a dummy ACK (optional but helps)
-    // int16_t dummy[6] = {0};
-    // radio.writeAckPayload(PIPE_INDEX, dummy, sizeof(dummy));
-    
-    radio.startListening();
-    
-    // Optional: clear any pending interrupts
-    radio.clearStatusFlags();   // or radio.maskIRQ(1,1,1); then re-enable
+  // // === Protect shared data FIRST ===
+  // taskENTER_CRITICAL();
+  // inputList[0] = 0.0f;  // Vcmd
+  // inputList[1] = 0.0f;  // yaw
+  // inputList[2] = 0.0f;  // pitch
+  // inputList[3] = 0.0f;  // roll   
+  // taskEXIT_CRITICAL();
+
+  radio.stopListening();
+  radio.flush_rx();
+  radio.flush_tx();
+  radio.startListening();
+  radio.clearStatusFlags();
 }
 
 // === Timer callback (runs in timer task context!) ===
@@ -125,14 +105,14 @@ static void linkTimeoutCallback(TimerHandle_t xTimer){
 
   // Safest & fastest way for very short write
   taskENTER_CRITICAL();
-  // inputList[0] = 0.0f; // we will not kill T for E-landing
-  inputList[1] = 0.0f;
-  inputList[2] = 0.0f;
-  inputList[3] = 0.0f;
+  inputList[0] = 0.0f; // zero Vcmd
+  inputList[1] = 0.0f; // zero yaw input
+  inputList[2] = 0.0f; // zero pitch input
+  inputList[3] = 0.0f; // zero roll input
   if (inputList[4] == 0.0f) inputList[5] = 1.0f;   // set E-landing flag;   
   taskEXIT_CRITICAL();
 
-  fastRadioRecoverRX();
+  // fastRadioRecoverRX();
 }
 
 void initLinkWatchdog(void){
@@ -314,6 +294,8 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       }
       az_true_f = (az_true_f - 1.0f) * 9.81f; 
 
+      az_true_f = constrainFloat(az_true_f, -15.0f, 15.0f); // Constrain to reasonable range for a drone (tune as needed)
+
       // fusedAlt = kalmanAltitudeUpdate(&kalmanState, local_altitude, az_world_filtered, dt * kalman_interval); // Kalman filter update for altitude estimation
       kalman_update(&kalmanState, local_altitude, az_true_f, dt * kalman_interval); // Kalman filter update for altitude estimation
       // kalman_update(&kalmanState, local_altitude, az_true_f, 0.010f); // Kalman filter update for altitude estimation
@@ -376,12 +358,12 @@ void PIDtask(void* Parameters) {
 
   // ====================== CONFIG ======================
   const float BASE_THROTTLE = 1000.0f;      // Fixed base in mixer
-  const float MAX_TB        = 560.0f;       // Maximum hover component for takeoff only (was 53% too low, 58% too high), [54, 55]
+  const float MAX_TB        = 545.0f;       // Maximum hover component for takeoff only (was 53% too low, 58% too high), [54, 55]
   const float HOVER_TB      = 545.0f;       // Starting guess - tune this later
 
-  const float KP_VZ = 150.0f; // was 160: [140, 180], 130 was too low
+  const float KP_VZ = 143.0f; // was 140: [140, 180], 130 was too low
   const float KI_VZ = 0.5f; // was 0.5 good, [0.5, 2]
-  const float VZ_OUTPUT_LIMIT = 200.0f; // was 250
+  const float VZ_OUTPUT_LIMIT = 200.0f; // already good
 
   const float ARM_HOLD_TIME = 2.1f; // 2.1 sec
 
@@ -412,6 +394,12 @@ void PIDtask(void* Parameters) {
   emaInit(&Y_LPF, 1.0f, 15.0f, 500.0f);
   emaInit(&T_LPF, 1.0f, 15.0f, 500.0f);
 
+  const float MOTOR_FC_HZ = 40.0f; // 40 Hz, 10 Hz is too low
+  emaInit(&M1_LPF, 1.0F, MOTOR_FC_HZ, 500.0f);
+  emaInit(&M2_LPF, 1.0F, MOTOR_FC_HZ, 500.0f);
+  emaInit(&M3_LPF, 1.0F, MOTOR_FC_HZ, 500.0f);
+  emaInit(&M4_LPF, 1.0F, MOTOR_FC_HZ, 500.0f);
+
   // vertical controller mode
   typedef enum {
     VELOCITY_CONTROL,
@@ -434,7 +422,7 @@ void PIDtask(void* Parameters) {
 
   float vz_correction = 0.0f;
   float tb = 0.0f;                        // 0 → hover (this is your hover component)
-  float Vb = 0.0; // 3s lipo: [11.4V, 12.6V]
+  float Vb = 0.0; // 3s lipo: [10.8V, 12.6V]
 
   float motor_cmd[4] = {MOTOR_MIN, MOTOR_MIN, MOTOR_MIN, MOTOR_MIN};
 
@@ -450,39 +438,7 @@ void PIDtask(void* Parameters) {
   int print_counter = 0;
 
   vTaskDelay(pdMS_TO_TICKS(3000));
-
-  // init madgwick attitude fusion
-  // Initialize Madgwick filter with first valid sensor data
-  bool initialized = false;
-  while (!initialized) {
-    if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-      float ax = MadgwickSensorList[0];
-      float ay = MadgwickSensorList[1];
-      float az = MadgwickSensorList[2];
-      float wx = MadgwickSensorList[3];
-      float wy = MadgwickSensorList[4];
-      float wz = MadgwickSensorList[5];
-      xSemaphoreGive(madgwickMutex);
-      
-      // Average a few samples for better initial estimate
-      static float ax_sum = 0, ay_sum = 0, az_sum = 0, wx_sum = 0, wy_sum = 0, wz_sum = 0;
-      static int init_count = 0;
-      
-      ax_sum += ax; ay_sum += ay; az_sum += az;
-      wx_sum += wx; wy_sum += wy; wz_sum += wz;
-      init_count++;
-      
-      if (init_count >= 50) {  // 100ms at 500Hz
-        Madgwick_initFromSensors(
-          ax_sum/init_count, ay_sum/init_count, az_sum/init_count,
-          wx_sum/init_count, wy_sum/init_count, wz_sum/init_count
-        );
-        initialized = true;
-      }
-    }
-    vTaskDelay(pdMS_TO_TICKS(2));
-  }
-
+ 
   for (;;) {
     // Sensor Read (Madgwick + Telemetry)
     if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
@@ -529,6 +485,12 @@ void PIDtask(void* Parameters) {
       
       xSemaphoreGive(nRF24Mutex);
     }
+
+    // constrain redundancy 
+    rollInput  = constrainFloat(rollInput, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+    pitchInput = constrainFloat(pitchInput, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
+    yawInput   = constrainFloat(yawInput, -YAW_MAX, YAW_MAX);
+    vz_cmd     = constrainFloat(vz_cmd, -0.8f, 1.0f);
 
     // Telemetry Update
     if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
@@ -597,11 +559,11 @@ void PIDtask(void* Parameters) {
         break;
 
       case TAKEOFF:
-        vz_in.is_flying = 1.0f;
+        vz_in.is_flying = 0.0f; // should i make this 0? let's try: 
         takeoffRamp += dt * 0.75f;           // ~1.3s ramp
         if (takeoffRamp > 1.0f) takeoffRamp = 1.0f;
 
-        tb = takeoffRamp * MAX_TB;           // ramp 0 → 500
+        tb = takeoffRamp * MAX_TB;           // ramp 0 → 545
 
         if (takeoffRamp >= 1.0f && fabsf(velocity_z) < 0.5f) {
           flightState = FLYING;
@@ -652,8 +614,12 @@ void PIDtask(void* Parameters) {
 
     yaw_rate_setpoint = yawInputFiltered;
 
-    bool isLanded = (flightState == DISARMED || flightState == ARMED_IDLE);
-    pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = isLanded ? 1.0f : 0.0f;
+    // bool isLanded = (flightState == DISARMED || flightState == ARMED_IDLE);
+    // pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = isLanded ? 1.0f : 0.0f;
+
+    // not yet tested
+    bool isFlying = (flightState == FLYING);
+    pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = isFlying ? 0.0f : 1.0f;
 
     float total_throttle = BASE_THROTTLE + tb + vz_correction;
 
@@ -683,6 +649,16 @@ void PIDtask(void* Parameters) {
       motor_cmd[1] = total_throttle - R_mix + P_mix + Y_mix;
       motor_cmd[2] = total_throttle + R_mix - P_mix + Y_mix;
       motor_cmd[3] = total_throttle - R_mix - P_mix - Y_mix;
+
+      emaUpdate(&M1_LPF, motor_cmd[0]);
+      emaUpdate(&M2_LPF, motor_cmd[1]);
+      emaUpdate(&M3_LPF, motor_cmd[2]);
+      emaUpdate(&M4_LPF, motor_cmd[3]);
+
+      motor_cmd[0] = M1_LPF.output;
+      motor_cmd[1] = M2_LPF.output;
+      motor_cmd[2] = M3_LPF.output;
+      motor_cmd[3] = M4_LPF.output;
     }
 
     for (int i = 0; i < 4; i++) {
@@ -702,651 +678,6 @@ void PIDtask(void* Parameters) {
     vTaskDelayUntil(&lastWakeTime, interval);
   }
 }
-
-///////////////////////////////////////////////////////////////
-// // // thesis PID task (telemetry): to be tested
-// void PIDtask(void* Parameters) {
-//   TickType_t lastWakeTime = xTaskGetTickCount();
-//   const TickType_t interval = pdMS_TO_TICKS(2);  // 500 Hz
-//   const float dt = 0.002f;
-
-//   // ====================== CONFIG ======================
-//   const float BASE_THROTTLE = 1000.0f;
-//   const float MAX_TB        = 545.0f;
-//   const float HOVER_TB      = MAX_TB;
-
-//   const float KP_VZ = 145.0f;
-//   const float KI_VZ = 0.5f;
-//   const float VZ_OUTPUT_LIMIT = 200.0f;
-
-//   const float ARM_HOLD_TIME = 2.5f;
-
-//   const float MOTOR_MIN = 1050.0f;
-//   const float MOTOR_MAX = 2000.0f;
-
-//   bool KILL_MOTORS = false;
-//   bool E_LAND = false;
-
-//   // ====================== VARIABLES ======================
-//   float vz_cmd = 0.0f;
-//   float vz_cmdFiltered = 0.0f;
-//   float velocity_z = 0.0f;
-//   float altitude = 0.0f;
-
-//   float roll, pitch, yaw;
-//   float rollRate, pitchRate, yawRate;
-
-//   float rollInput, pitchInput, yawInput;
-
-//   float rollInputFiltered = 0.0f;
-//   float pitchInputFiltered = 0.0f;
-//   float yawInputFiltered = 0.0f;
-
-//   // EMA filters
-//   emaInit(&R_LPF, 1.0f, 15.0f, 500.0f);
-//   emaInit(&P_LPF, 1.0f, 15.0f, 500.0f);
-//   emaInit(&Y_LPF, 1.0f, 20.0f, 500.0f);
-//   emaInit(&T_LPF, 1.0f, 12.0f, 500.0f);
-
-//   typedef enum {
-//     VELOCITY_CONTROL,
-//     ALTITUDE_CONTROL
-//   } VerticalControlMode_t;
-
-//   VerticalControlMode_t vertical_mode = VELOCITY_CONTROL;
-
-//   typedef enum {
-//     DISARMED,
-//     ARMED_IDLE,
-//     TAKEOFF,
-//     FLYING
-//   } FlightState_t;
-
-//   FlightState_t flightState = DISARMED;
-//   float armingTimer = 0.0f;
-//   float takeoffRamp = 0.0f;
-
-//   float vz_correction = 0.0f;
-//   float tb = 0.0f;
-//   float Vb = 0.0;
-
-//   float motor_cmd[4] = {MOTOR_MIN, MOTOR_MIN, MOTOR_MIN, MOTOR_MIN};
-
-//   initVelocityControlZ(&vz_in, KP_VZ, KI_VZ, VZ_OUTPUT_LIMIT);
-
-//   float roll_rate_setpoint = 0.0f;
-//   float pitch_rate_setpoint = 0.0f;
-//   float yaw_rate_setpoint = 0.0f;
-
-//   float ax, ay, az, wx, wy, wz, mx, my, mz;
-
-//   int outer_loop_counter = 0;
-//   int print_counter = 0;
-
-//   // Local variables for telemetry
-//   float R_mix, P_mix, Y_mix;
-
-//   vTaskDelay(pdMS_TO_TICKS(3000));
-
-//   for (;;) {
-//     // Sensor Read (Madgwick + Telemetry)
-//     if (xSemaphoreTake(madgwickMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//       ax = MadgwickSensorList[0]; ay = MadgwickSensorList[1]; az = MadgwickSensorList[2];
-//       wx = MadgwickSensorList[3]; wy = MadgwickSensorList[4]; wz = MadgwickSensorList[5];
-//       mx = MadgwickSensorList[6]; my = MadgwickSensorList[7]; mz = MadgwickSensorList[8];
-//       xSemaphoreGive(madgwickMutex);
-//     }
-
-//     MadgwickFilterUpdate(&madData, wx, wy, wz, ax, ay, az, mx, my, mz, dt);
-//     MadgwickGetEuler(&madData);
-
-//     if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//       eulerAngles[0] = madData.roll;
-//       eulerAngles[1] = madData.pitch;
-//       eulerAngles[2] = madData.yaw;
-//       xSemaphoreGive(eulerAnglesMutex);
-//     }
-
-//     roll  = eulerAngles[0] * DEG_TO_RAD;
-//     pitch = eulerAngles[1] * DEG_TO_RAD;
-//     yaw   = eulerAngles[2] * DEG_TO_RAD;
-
-//     rollRate  = wx;
-//     pitchRate = wy;
-//     yawRate   = wz;
-
-//     // User Input
-//     if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//       vz_cmd     = inputList[0];
-//       yawInput   = inputList[1];
-//       pitchInput = inputList[2];
-//       rollInput  = inputList[3];
-
-//       KILL_MOTORS = (inputList[4] != 0.0f);
-//       bool pilot_E_LAND = (inputList[5] != 0.0f);
-
-//       if (!KILL_MOTORS) {
-//         if (pilot_E_LAND || (Vb < 10.8f)) E_LAND = true;
-//         else E_LAND = false;
-//       }
-      
-//       xSemaphoreGive(nRF24Mutex);
-//     }
-
-//     // Telemetry Update
-//     if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//       altitude = telemetry[0];
-//       velocity_z = telemetry[1];
-//       Vb = telemetry[4] / 100.0f;
-
-//       if (Vb > 12.6f) Vb = 12.6f;
-//       else if (Vb < 11.0f) Vb = 11.0f;
-
-//       xSemaphoreGive(telemetryMutex);
-//     }
-
-//     // E_LAND Behavior
-//     if (E_LAND && !KILL_MOTORS) {
-//       if (vz_cmd < 0.1f) {
-//         vz_cmd = -0.5f;
-//       }
-//     }
-
-//     if ((flightState == TAKEOFF || flightState == FLYING) && 
-//       (fabsf(roll) > MAX_SAFE_ANGLE_RAD || fabsf(pitch) > MAX_SAFE_ANGLE_RAD)) {
-//       KILL_MOTORS = true;
-//       flightState = DISARMED;
-//     }
-
-//     // ====================== ARMING ======================
-//     bool sticksInArmPosition = (vz_cmd < -0.70f) && (fabsf(pitchInput) > 18.0f * DEG_TO_RAD);
-
-//     if (flightState == DISARMED) {
-//       if (sticksInArmPosition) {
-//         armingTimer += dt;
-//         if (armingTimer >= ARM_HOLD_TIME) {
-//           flightState = ARMED_IDLE;
-//           armingTimer = 0.0f;
-//           tb = 0.0f;
-//           buzz_it(1, 120);
-//           for (int i = 0; i < 4; i++) motor_cmd[i] = 1150.0f;
-//         }
-//       } else {
-//         armingTimer = 0.0f;
-//       }
-//     }
-
-//     // ====================== STATE MACHINE ======================
-//     switch (flightState) {
-//       case DISARMED:
-//         tb = 0.0f;
-//         vz_in.is_flying = 0.0f;
-//         break;
-
-//       case ARMED_IDLE:
-//         tb = 0.0f;
-//         vz_in.is_flying = 0.0f;
-//         if (vz_cmd > -0.70f) { 
-//           flightState = TAKEOFF;
-//           takeoffRamp = 0.0f;
-//         }
-//         break;
-
-//       case TAKEOFF:
-//         vz_in.is_flying = 1.0f;
-//         takeoffRamp += dt * 0.75f;
-//         if (takeoffRamp > 1.0f) takeoffRamp = 1.0f;
-
-//         tb = takeoffRamp * MAX_TB;
-
-//         if (takeoffRamp >= 1.0f && fabsf(velocity_z) < 0.5f) {
-//           flightState = FLYING;
-//         }
-//         break;
-
-//       case FLYING:
-//         vz_in.is_flying = 1.0f;
-//         const float K_GE = 200.0f;
-//         const float GE_THRESHOLD = 1.4f;
-//         const float R_PROP = 0.127f;
-//         float ge_comp = 0.0f;
-
-//         if (altitude < GE_THRESHOLD && E_LAND) {
-//           float z = altitude;
-//           if (z < 0.3) z = 0.3;
-//           ge_comp = K_GE * (R_PROP / z) * (R_PROP / z);
-//         }
-
-//         static float Vb_hover_gain = 50.0f;
-//         tb = HOVER_TB + Vb_hover_gain * (12.6f - Vb) - ge_comp;
-//         break;
-//     }
-
-//     // ====================== FILTERING ======================
-//     emaUpdate(&R_LPF, rollInput);
-//     emaUpdate(&P_LPF, pitchInput);
-//     emaUpdate(&Y_LPF, yawInput);
-//     emaUpdate(&T_LPF, vz_cmd);
-
-//     rollInputFiltered  = constrainFloat(R_LPF.output, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//     pitchInputFiltered = constrainFloat(P_LPF.output, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//     yawInputFiltered   = constrainFloat(Y_LPF.output, -YAW_MAX, YAW_MAX);
-//     vz_cmdFiltered     = T_LPF.output;
-
-//     // Attitude outer loop @ 100 Hz
-//     outer_loop_counter++;
-//     if (outer_loop_counter >= 5) {
-//       if ((flightState == TAKEOFF || flightState == FLYING) && vertical_mode == VELOCITY_CONTROL) {
-//         vz_correction = computeVelocityControlZ(&vz_in, vz_cmdFiltered, velocity_z, dt);
-//       }
-//       roll_rate_setpoint  = computeLyGAPID_out(&pidRoll,  rollInputFiltered,  roll,  0.01f);
-//       pitch_rate_setpoint = computeLyGAPID_out(&pidPitch, pitchInputFiltered, pitch, 0.01f);
-//       outer_loop_counter = 0;
-//     }
-
-//     yaw_rate_setpoint = yawInputFiltered;
-
-//     bool isLanded = (flightState == DISARMED || flightState == ARMED_IDLE);
-//     pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = isLanded ? 1.0f : 0.0f;
-
-//     // Inner loop - Rate PID controllers
-//     R_mix = constrainFloat(computeLyGAPID_in(&pidRollRate, roll_rate_setpoint, rollRate, dt), 
-//                            -U_MAX_ROLL_RATE, U_MAX_ROLL_RATE);
-//     P_mix = constrainFloat(computeLyGAPID_in(&pidPitchRate, pitch_rate_setpoint, pitchRate, dt), 
-//                            -U_MAX_PITCH_RATE, U_MAX_PITCH_RATE);
-//     Y_mix = constrainFloat(computeLyGAPID_yaw(&pidYawRate, yaw_rate_setpoint, yawRate, dt), 
-//                            -U_MAX_YAW_RATE, U_MAX_YAW_RATE);
-
-//     float total_throttle = BASE_THROTTLE + tb + vz_correction;
-
-//     if (flightState == TAKEOFF || flightState == FLYING) {
-//       total_throttle = constrainFloat(total_throttle, 1450.0f, 1750.0f);
-//     }
-
-//     // ====================== THESIS TELEMETRY UPDATE ======================
-//     if (xSemaphoreTake(thesisTelemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//       // Control Effort
-//       thesis_telemetry[0] = (int16_t)R_mix;
-//       thesis_telemetry[1] = (int16_t)P_mix;
-//       thesis_telemetry[2] = (int16_t)Y_mix;
-      
-//       // Angles and Rate
-//       thesis_telemetry[3] = (int16_t)(roll * RAD_TO_DEG * 100);      // 0.01° resolution
-//       thesis_telemetry[4] = (int16_t)(pitch * RAD_TO_DEG * 100);
-//       thesis_telemetry[5] = (int16_t)(yawRate * RAD_TO_DEG * 10);    // 0.1 °/s resolution
-      
-//       // Yaw PI Gains
-//       thesis_telemetry[6] = (int16_t)(pidYawRate.Kp * 100);
-//       thesis_telemetry[7] = (int16_t)(pidYawRate.Ki * 100);
-      
-//       // Roll P-PID Gains
-//       thesis_telemetry[8]  = (int16_t)(pidRoll.Kp * 100);
-//       thesis_telemetry[9]  = (int16_t)(pidRollRate.Kp * 100);
-//       thesis_telemetry[10] = (int16_t)(pidRollRate.Ki * 100);
-//       thesis_telemetry[11] = (int16_t)(pidRollRate.Kd * 10000);
-      
-//       // Pitch P-PID Gains
-//       thesis_telemetry[12] = (int16_t)(pidPitch.Kp * 100);
-//       thesis_telemetry[13] = (int16_t)(pidPitchRate.Kp * 100);
-//       thesis_telemetry[14] = (int16_t)(pidPitchRate.Ki * 100);
-//       thesis_telemetry[15] = (int16_t)(pidPitchRate.Kd * 1000);
-      
-//       xSemaphoreGive(thesisTelemetryMutex);
-//     }
-
-//     // Motor Mixer
-//     if (KILL_MOTORS) {
-//       resetLyGAPID(&pidRoll); resetLyGAPID(&pidPitch);
-//       resetLyGAPID(&pidRollRate); resetLyGAPID(&pidPitchRate); resetLyGAPID(&pidYawRate);
-//       kalman_reset(&kalmanState);
-//       flightState = DISARMED;
-//       tb = 0.0f;
-//       vz_in.is_flying = 0.0f;
-//       pidRoll.landed = pidPitch.landed = pidRollRate.landed = pidPitchRate.landed = 1.0f;
-//       for (int i = 0; i < 4; i++) motor_cmd[i] = MOTOR_MIN;
-//     } else {
-//       motor_cmd[0] = total_throttle + R_mix + P_mix - Y_mix;
-//       motor_cmd[1] = total_throttle - R_mix + P_mix + Y_mix;
-//       motor_cmd[2] = total_throttle + R_mix - P_mix + Y_mix;
-//       motor_cmd[3] = total_throttle - R_mix - P_mix - Y_mix;
-//     }
-
-//     for (int i = 0; i < 4; i++) {
-//       motor_cmd[i] = constrainFloat(motor_cmd[i], MOTOR_MIN, MOTOR_MAX);
-//     }
-
-//     // Motor Output
-//     TIM2->CCR1 = (uint16_t)motor_cmd[0];
-//     TIM2->CCR2 = (uint16_t)motor_cmd[1];
-//     TIM2->CCR3 = (uint16_t)motor_cmd[2];
-//     TIM2->CCR4 = (uint16_t)motor_cmd[3];
-
-//     if (++print_counter >= 50) {
-//       print_counter = 0;
-//     }
-
-//     vTaskDelayUntil(&lastWakeTime, interval);
-//   }
-// }
-
-// // // RXtask thesis (telemetry): working!
-// void RXtask(void* Parameters){
-//     int16_t local_telemetry[16] = {0};  // ACK payload
-//     int16_t rx_load[5] = {0, 0, 0, 0, 0};
-    
-//     initLinkWatchdog();
-    
-//     // CRITICAL: Pre-load initial ACK payload
-//     radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
-    
-//     for (;;) {
-//         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-//         uint8_t flags = radio.clearStatusFlags();
-        
-//         if (flags & RF24_RX_DR) {
-//             while (radio.available()) {
-//                 // Write ACK payload BEFORE read (already correct)
-//                 radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
-                
-//                 // Small delay for PA/LNA module stability (optional, keep if needed)
-//                 delayMicroseconds(100);
-                
-//                 // Read incoming data
-//                 radio.read(rx_load, sizeof(rx_load));
-                
-//                 // ★★★ THE FIX - Add this one line ★★★
-//                 radio.startListening();  // Force back to RX mode after ACK
-                
-//                 connection_ok = true;
-                
-//                 // Reset watchdog
-//                 if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
-//                     xTimerStart(linkWatchdogTimer, 0);
-//                 } else {
-//                     xTimerReset(linkWatchdogTimer, 0);
-//                 }
-                
-//                 // Process incoming commands
-//                 float Tcmd = (float)rx_load[0] / 100.0f;
-//                 float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD;
-//                 float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
-//                 float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
-//                 float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
-                
-//                 if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//                     inputList[0] = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX);
-//                     inputList[1] = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX);
-//                     inputList[2] = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//                     inputList[3] = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//                     inputList[4] = kill;
-//                     xSemaphoreGive(nRF24Mutex);
-//                 }
-                
-//                 // Prepare ACK payload for NEXT packet
-//                 if (xSemaphoreTake(thesisTelemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//                     for (int i = 0; i < 16; i++) {
-//                         local_telemetry[i] = thesis_telemetry[i];
-//                     }
-//                     xSemaphoreGive(thesisTelemetryMutex);
-//                 }
-//             }
-//         }
-        
-//         // Handle MAX_RT if it occurs
-//         if (flags & RF24_TX_DF) {
-//             radio.flush_tx();
-//         }
-//     }
-// }
-///////////////////////////////////////////////////////////////
-
-// // dummy 1
-// void RXtask(void* Parameters){
-//   // reply: roll, pitch, yaw, alt, rad status, 2{P, kp, ki, kd}, {Kp, Ki, Kd}
-//   // 32 bytes nRF24 max can handle, sent:  32 bytes, int16 = 2 bytes
-//   int16_t local_telemetry[5] = {20, 20, 20, 20, 10}; 
-//   int16_t rx_load[5] = {20, 20, 20, 20, 30};
-
-//   int counter_print = 0;
-
-
-//   // init failsafe radio link
-//   initLinkWatchdog();
-
-//   // Start killed
-//   connection_ok = false;
-
-//   for (;;) {
-//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-//     // Read + clear status flags
-//     uint8_t flags = radio.clearStatusFlags();
-
-//     // Handle data ready
-//     if (flags & RF24_RX_DR) {
-//       while (radio.available()) {
-//         // We are alive!
-//         connection_ok = true;
-//         Serial.println("help");
-
-//         // Restart watchdog (this is the magic line)
-//         // Critical: Start or restart watchdog
-//         if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
-//           xTimerStart(linkWatchdogTimer, 0);
-//         } else {
-//           xTimerReset(linkWatchdogTimer, 0);
-//         }
-
-       
-//         // Write ACK payload BEFORE read
-//         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
-        
-//         // Read incoming data
-//         radio.read(rx_load, sizeof(rx_load));
-        
-//         radio.startListening();
-
-//         if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//           Serial.print("[nRF24 RX] Received: ");
-//           for (int i = 0; i <= 3; i++) {
-//             Serial.print(rx_load[i]); Serial.print(", ");
-//           }
-//           Serial.println(rx_load[4]);
-//           xSemaphoreGive(serialMutex);
-//         }
-
-//         // // 2. update the data in inputList with mutex
-//         // if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {  
-//         //   inputList[0] = Tcmd; // update throttle
-//         //   inputList[1] = Ycmd; // update yaw
-//         //   inputList[2] = Pcmd; // update pitch
-//         //   inputList[3] = Rcmd; // update roll
-//         //   inputList[4] = killcmd; // update kill flag in inputList
-//         //   inputList[5] = e_landing; // Emergency landing flag
-
-//         //   // temporary for analysis: roll only
-//         //   inputList[6] = sigma; 
-//         //   inputList[7] = gamma;
-//         //   xSemaphoreGive(nRF24Mutex);
-//         // }
-
-//       }
-//     }
-
-//     // Optional: catch abnormal TX_ACK behavior
-//     if (flags & 0x10) {
-//       radio.flush_tx();  // clear stuck packet
-//     }
-//   }
-// }
-
-// // this should work!
-// void RXtask(void* Parameters){
-//     int16_t local_telemetry[5] = {0};  // ACK payload
-//     int16_t rx_load[5] = {0, 0, 0, 0, 1};
-    
-//     initLinkWatchdog();
-    
-//     // CRITICAL: Pre-load initial ACK payload
-//     radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
-    
-//     for (;;) {
-//         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-//         uint8_t flags = radio.clearStatusFlags();
-        
-//         if (flags & RF24_RX_DR) {
-//             while (radio.available()) {
-//                 // Write ACK payload BEFORE read (already correct)
-//                 radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
-                
-//                 // Small delay for PA/LNA module stability (optional, keep if needed)
-//                 delayMicroseconds(100);
-                
-//                 // Read incoming data
-//                 radio.read(rx_load, sizeof(rx_load));
-                
-//                 // ★★★ THE FIX - Add this one line ★★★
-//                 radio.startListening();  // Force back to RX mode after ACK
-                
-//                 connection_ok = true;
-                
-//                 // Reset watchdog
-//                 if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
-//                     xTimerStart(linkWatchdogTimer, 0);
-//                 } else {
-//                     xTimerReset(linkWatchdogTimer, 0);
-//                 }
-                
-//                 // Process incoming commands
-//                 float Tcmd = (float)rx_load[0] / 100.0f;
-//                 float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD;
-//                 float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
-//                 float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
-//                 float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
-                
-//                 if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//                     inputList[0] = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX);
-//                     inputList[1] = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX);
-//                     inputList[2] = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//                     inputList[3] = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//                     inputList[4] = kill;
-//                     xSemaphoreGive(nRF24Mutex);
-//                 }
-                
-//                 // Prepare ACK payload for NEXT packet
-//                 if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//                   local_telemetry[0] = (int16_t) eulerAngles[0];
-//                   local_telemetry[1] = (int16_t) eulerAngles[1];
-//                   local_telemetry[2] = (int16_t) eulerAngles[2];
-//                   xSemaphoreGive(eulerAnglesMutex);
-//                 }
-//                 if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//                   local_telemetry[3] = (int16_t) (telemetry[0] * 100.0f);
-//                   local_telemetry[4] = (int16_t) telemetry[4];
-//                   xSemaphoreGive(telemetryMutex);
-//                 }
-//             }
-//         }
-        
-//         // Handle MAX_RT if it occurs
-//         if (flags & 0x10) {
-//             radio.flush_tx();
-//         }
-//     }
-// }
-
-
-// void RXtask(void* Parameters){
-//   // reply: roll, pitch, yaw, alt, rad status, 2{P, kp, ki, kd}, {Kp, Ki, Kd}
-//   // 32 bytes nRF24 max can handle, sent:  32 bytes, int16 = 2 bytes
-//   int16_t local_telemetry[6] = {0}; 
-//   int16_t rx_load[5] = {0, 0, 0, 0, 1};
-
-//   int counter_print = 0;
-
-
-//   // init failsafe radio link
-//   initLinkWatchdog();
-
-//   // Start killed
-//   connection_ok = false;
-
-//   for (;;) {
-//     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-//     // Read + clear status flags
-//     uint8_t flags = radio.clearStatusFlags();
-
-//     // Handle data ready
-//     if (flags & RF24_RX_DR) {
-//       while (radio.available()) {
-//         // We are alive!
-//         connection_ok = true;
-
-//         // Restart watchdog (this is the magic line)
-//         // Critical: Start or restart watchdog
-//         if (xTimerIsTimerActive(linkWatchdogTimer) == pdFALSE) {
-//           xTimerStart(linkWatchdogTimer, 0);
-//         } else {
-//           xTimerReset(linkWatchdogTimer, 0);
-//         }
-
-//         // access telemetry data for ACK payload
-//         if (xSemaphoreTake(eulerAnglesMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//           local_telemetry[0] = (int16_t) eulerAngles[0];
-//           local_telemetry[1] = (int16_t) eulerAngles[1];
-//           local_telemetry[2] = (int16_t) eulerAngles[2];
-//           xSemaphoreGive(eulerAnglesMutex);
-//         }
-//         if (xSemaphoreTake(telemetryMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//           local_telemetry[3] = (int16_t) (telemetry[0] * 100.0f);
-//           local_telemetry[4] = (int16_t) telemetry[4];
-//           local_telemetry[5] = (int16_t) (telemetry[1] * 100.0f); // velocity_z
-//           xSemaphoreGive(telemetryMutex);
-//         }
-
-//         // Write ACK payload BEFORE read
-//         radio.writeAckPayload(PIPE_INDEX, local_telemetry, sizeof(local_telemetry));
-        
-//         // Read incoming data
-//         radio.read(rx_load, sizeof(rx_load));
-        
-//         radio.startListening();
-
-//         // if (xSemaphoreTake(serialMutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//         //   Serial.print("[nRF24 RX] Received: ");
-//         //   for (int i = 0; i <= 3; i++) {
-//         //     Serial.print(rx_load[i]); Serial.print(", ");
-//         //   }
-//         //   Serial.println(rx_load[4]);
-//         //   xSemaphoreGive(serialMutex);
-//         // }
-
-//         // Process incoming commands
-//         float Tcmd = (float)rx_load[0] / 100.0f;
-//         float Ycmd = ((float)rx_load[1]) * DEG_TO_RAD;
-//         float Pcmd = ((float)rx_load[2] / 100.0f) * DEG_TO_RAD * (-1.0f);
-//         float Rcmd = ((float)rx_load[3] / 100.0f) * DEG_TO_RAD;
-//         float kill = (rx_load[4] == 0) ? 0.0f : 1.0f;
-        
-//         if (xSemaphoreTake(nRF24Mutex, pdMS_TO_TICKS(1)) == pdTRUE) {
-//             inputList[0] = constrainFloat(Tcmd, THROTTLE_MIN, THROTTLE_MAX);
-//             inputList[1] = constrainFloat(Ycmd, -YAW_MAX, YAW_MAX);
-//             inputList[2] = constrainFloat(Pcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//             inputList[3] = constrainFloat(Rcmd, -PITCH_ROLL_MAX, PITCH_ROLL_MAX);
-//             inputList[4] = kill;
-//             xSemaphoreGive(nRF24Mutex);
-//         }
-
-//       }
-//     }
-
-//     // Optional: catch abnormal TX_ACK behavior
-//     if (flags & 0x10) {
-//       radio.flush_tx();  // clear stuck packet
-//     }
-//   }
-// }
 
 void RXtask(void* Parameters) {
     int16_t local_telemetry[6] = {0}; 
@@ -1414,11 +745,11 @@ void RXtask(void* Parameters) {
 
         // === NEW: Periodic recovery check ===
         static uint32_t lastRecoverCheck = 0;
-        if (xTaskGetTickCount() - lastRecoverCheck > pdMS_TO_TICKS(200)) {
+        if (xTaskGetTickCount() - lastRecoverCheck > pdMS_TO_TICKS(500)) { // was 200
             lastRecoverCheck = xTaskGetTickCount();
             
             if (!connection_ok) {
-                fastRadioRecoverRX();     // <--- Add this
+              fastRadioRecoverRX();     // <--- Add this
             }
         }
     }
@@ -1561,7 +892,13 @@ void freeRTOS_tasks_init(void){
 
 
 
-// Priority tasks are all set to 1 (working) - i will try to change for the better: status: trying...
+// Priority tasks are all set to 1 (working)
 
-//// TODO: 
+//// TODO: (FIX)
+// [x] unsafe angle is triggered thus it will kill the motor (@ takeoff, sometimes at hover)
+// [x] aggressive takeoff (sometimes): tilted takeoff and it is aggressive (i think this is due to integral windup)
+// [x] bad pitch and roll meas at startup that sometimes messes with takeoff
+
+
+//// TODO:
 // [x] free flight

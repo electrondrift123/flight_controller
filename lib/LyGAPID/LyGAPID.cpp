@@ -27,8 +27,7 @@ void initLyGAPID(LyGAPIDControllerData_t* lygapid, float Kp, float Ki, float Kd,
 
     lygapid->landed = 1.0f; // 1 = true, 0 = false
 
-    // Butterworth2ndLPF_Init(&pidLPF, 80.0f, 500.0f);  // 35–50 Hz; lower than racing
-    emaInit(&pidLPF, 2.0f, 30.0f, 500.0f); // 20–40 Hz; recommended
+    emaInit(&lygapid->pidLPF, 2.0f, 30.0f, 500.0f); // 20–40 Hz; recommended
 }
 
 // for PITCH and ROLL positions
@@ -70,8 +69,8 @@ float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float 
 
     float derivative = (error - lygapid->prev_error) / dt;
     // Butterworth2ndLPF_Update(&pidLPF, derivative);
-    emaUpdate(&pidLPF, derivative);
-    derivative = pidLPF.output;
+    emaUpdate(&lygapid->pidLPF, derivative);
+    derivative = lygapid->pidLPF.output;
 
     float u_ = lygapid->Kp * error + lygapid->Ki * lygapid->integral + lygapid->Kd * derivative;
 
@@ -132,8 +131,8 @@ float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float 
         else if (lygapid->Kd < KD_MIN) lygapid->Kd = KD_MIN;
     }
     else if (lygapid->mode == 1.0f){
-        lygapid->Kp = KP_MIN; // fixed high Kp for output control
-        lygapid->Ki = KI_MAX / 3.0f; // was 2.0f // fixed high Kp for output control
+        lygapid->Kp = 50.0f; // fixed high Kp for output control
+        lygapid->Ki = 1.5f; // was 15.0f // fixed high Kp for output control
         lygapid->Kd = 0.005f; // fixed high Kp for output control
     }
 
@@ -191,8 +190,8 @@ float computeLyGAPID_yaw(LyGAPIDControllerData_t* lygapid, float setpoint, float
         else if (lygapid->Ki < KI_MIN) lygapid->Ki = KI_MIN;
     }
     else if (lygapid->mode == 1.0f){
-        lygapid->Kp = KP_MIN * 0.80f; // fixed low Kp for yaw control
-        lygapid->Ki = 10.0f; // fixed low Ki for yaw control
+        lygapid->Kp = KP_MIN * 1.0f; // fixed low Kp for yaw control (was 0.8f)
+        lygapid->Ki = 1.0f; // fixed low Ki for yaw control (was 10)
     }
 
     return u;
