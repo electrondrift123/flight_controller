@@ -19,7 +19,7 @@ A real-time, flight controller for STM32F4-based drones, built using FreeRTOS an
 ## Hardware  
 - **STM32F411 Blackpill**  
 - **MPU6050** (IMU)  
-- **QMC5883P** (Magnetometer)  
+- **QMC5883P** (Magnetometer: Optional)  
 - **BMP280** (Barometer)  
 - GPS (optional)  
 - **nRF24L01+ PA/LNA** modules  
@@ -43,8 +43,9 @@ PID inner loop: angular rates error (500Hz)
 
 
 # Control Input
-- Roll and Pitch inputs are angle [-30,30] deg for safety.
+- Roll and Pitch inputs are angle [-20,20] deg for safety.
 - Yaw will be angular rate max cmd: [-360,360] deg/sec.
+- Vertical velocity: [-0.8,1.0] m/s
 - Internal calculation uses radians.
 
 # Control Scheme
@@ -65,17 +66,11 @@ PID inner loop: angular rates error (500Hz)
   
 # ESC calibration:[1000,2000] us pwm ticks
 
-# EMA (LPF): X = (1 - alpha) * X + alpha * X_prev
+# LPFs
 - command filter:             alpha = 0.8f
 - altitude (BMP sensor):      alpha = 0.8f (inv config) 
 - altitutude complementary:   alpha = 0.9f (inv)
 - Madgwick, MPU6050, QMC:     No LPF
-
-# Failsafes (TODO):
-- WDT for sensor freeze (done)
-- Kill switch flag to imovalise the motors
-- Emergency Landing when the signal is disconnected 
-  (gradually descent)
 
 
 # Controller Block Diagram (one block, not cascaded or the full architecture):

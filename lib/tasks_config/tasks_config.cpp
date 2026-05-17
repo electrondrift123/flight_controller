@@ -358,10 +358,10 @@ void PIDtask(void* Parameters) {
 
   // ====================== CONFIG ======================
   const float BASE_THROTTLE = 1000.0f;      // Fixed base in mixer
-  const float MAX_TB        = 545.0f;       // Maximum hover component for takeoff only (was 53% too low, 58% too high), [54, 55]
+  const float MAX_TB        = 550.0f;       // Maximum hover component for takeoff only (was 53% too low, 58% too high), [54, 55]
   const float HOVER_TB      = 545.0f;       // Starting guess - tune this later
 
-  const float KP_VZ = 143.0f; // was 140: [140, 180], 130 was too low
+  const float KP_VZ = 145.0f; // was 140: [140, 180], 130 was too low
   const float KI_VZ = 0.5f; // was 0.5 good, [0.5, 2]
   const float VZ_OUTPUT_LIMIT = 200.0f; // already good
 
@@ -399,6 +399,8 @@ void PIDtask(void* Parameters) {
   emaInit(&M2_LPF, 1.0F, MOTOR_FC_HZ, 500.0f);
   emaInit(&M3_LPF, 1.0F, MOTOR_FC_HZ, 500.0f);
   emaInit(&M4_LPF, 1.0F, MOTOR_FC_HZ, 500.0f);
+
+  emaInit(&Vb_sag_comp_LPF, 1.0f, 5.0f, 500.0f); // PT1 for voltage sag compensation
 
   // vertical controller mode
   typedef enum {
@@ -584,8 +586,19 @@ void PIDtask(void* Parameters) {
           ge_comp = K_GE * (R_PROP / z) * (R_PROP / z);
         }
 
-        static float Vb_hover_gain = 50.0f; // was 40
-        tb = HOVER_TB + Vb_hover_gain * (12.6f - Vb) - ge_comp; // voltage sag compensation     
+        // gain sched for voltage sag
+        float drop = 12.6f - Vb; // how much voltage has dropped from ideal
+        float Vb_hover_gain = 50.0f + 30.0f * drop * drop; // quadratic gain increase as voltage drops, tune these values
+        if (Vb_hover_gain > 100.0f) Vb_hover_gain = 100.0f; // cap the gain to prevent excessive compensation
+        float voltage_sag_com = Vb_hover_gain * drop;
+        if (voltage_sag_com > 100.0f) voltage_sag_com = 100.0f;
+
+        // voltage sag LPF
+        emaUpdate(&Vb_sag_comp_LPF, voltage_sag_com);
+        voltage_sag_com = Vb_sag_comp_LPF.output;
+
+        tb = HOVER_TB + voltage_sag_com - ge_comp; // voltage sag compensation     
+
         break;
     }
 
@@ -896,7 +909,6 @@ void freeRTOS_tasks_init(void){
 
 //// TODO: (FIX)
 // [x] unsafe angle is triggered thus it will kill the motor (@ takeoff, sometimes at hover)
-// [x] aggressive takeoff (sometimes): tilted takeoff and it is aggressive (i think this is due to integral windup)
 // [x] bad pitch and roll meas at startup that sometimes messes with takeoff
 
 

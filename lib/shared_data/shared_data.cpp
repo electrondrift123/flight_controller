@@ -37,6 +37,8 @@ EMA_t azTrueLPF;
 // voltage monitor
 EMA_t VbLPF;
 
+EMA_t Vb_sag_comp_LPF;
+
 // kalman filter state for altitude estimation
 KalmanState_t kalmanState;
 
