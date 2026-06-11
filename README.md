@@ -123,16 +123,18 @@ A real-time flight controller for STM32F4-based drones built with FreeRTOS and c
 
 ## 📁 Repository Structure
 
-/
-├── .vscode/ # VS Code workspace settings
-├── images/ # README images (drone, PCB, diagrams)
-├── include/ 
-├── lib/ # Custom libraries (sensor drivers, control, etc.)
-├── src/ # main.cpp and core application code
-├── test/ 
+```
+.
+├── .vscode/           # VS Code workspace settings
+├── images/            # README images (drone, PCB, diagrams)
+├── include/           # Header files (default)
+├── lib/               # Custom libraries (sensor drivers, control, etc.)
+├── src/               # main.cpp and core application code
+├── test/              # Unit tests (default)
 ├── .gitignore
 ├── README.md
-└── platformio.ini # PlatformIO build configuration
+└── platformio.ini     # PlatformIO build configuration
+```
 
 ## Connect
 
