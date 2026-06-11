@@ -1,37 +1,40 @@
 # STM32 Drone Flight Controller
 
-**Status: Flight-Validated on 450mm Quadrotor**
+> **Flight-Validated on 450mm Quadrotor**
 
-A real-time flight controller for STM32F4-based drones, built using FreeRTOS and custom drivers.
+A real-time flight controller for STM32F4-based drones built with FreeRTOS and custom drivers.
 
-**450mm Quadrotor**
-![alt text](images/Drone.jpg)
+---
 
-**KiCAD Flight Controller**
-![alt text](images/FC_3d_render.jpg)
-![alt text](images/FC_black_pcb.jpg)
-![alt text](images/FC_real.jpg)
+## 📸 Hardware
+
+| | |
+|---|---|
+| **450mm Quadrotor** | **Flight Controller (KiCad)** |
+| <img src="images/Drone.jpg" alt="Drone" width="400"> | <img src="images/FC_3d_render.jpg" alt="FC Render" width="400"> |
+| **PCB - Black** | **PCB - Real** |
+| <img src="images/FC_black_pcb.jpg" alt="FC Black" width="400"> | <img src="images/FC_real.jpg" alt="FC Real" width="400"> |
 
 **V2.0 - 4-Layer Design**
-![alt text](images/FC_PCB_v2.jpg)
+<img src="images/FC_PCB_v2.jpg" alt="FC V2" width="400">
 
 ---
 
-## Features  
+## ✨ Features
 
-- Modular FreeRTOS-based architecture
-- ATTi (Attitude) Mode
-- Madgwick Sensor Fusion (9DoF) for Attitude Estimation
-- Vertical Velocity 3-State Kalman Filter Estimation 
-- Vertical Velocity PI Controller  
-- Radio: nRF24L01 
-- Watchdog-protected system with failsafe reboot (SENSOR GLITCH)
-- Clean, low-latency motor PWM generation via timers  
-- Custom lightweight libraries 
+- 🔄 Modular FreeRTOS-based architecture
+- 🎯 ATTi (Attitude) Mode
+- 🧠 Madgwick Sensor Fusion (9DoF)
+- 📊 Vertical Velocity 3-State Kalman Filter
+- ⚡ Vertical Velocity PI Controller
+- 📡 nRF24L01 Radio
+- 🛡️ Watchdog-protected system with failsafe reboot
+- 🎮 Clean, low-latency motor PWM generation
+- 📦 Custom lightweight libraries
 
 ---
 
-## Hardware  
+## 🛠️ Hardware
 
 - **MCU:** STM32F411CEU
 - **IMU:** MPU6050
@@ -44,9 +47,9 @@ A real-time flight controller for STM32F4-based drones, built using FreeRTOS and
 
 ---
 
-## Control Architecture
+## 🎮 Control Architecture
 
-### Control Input Limits
+### Input Limits
 
 - **Roll:** [-20, 20] degrees
 - **Pitch:** [-20, 20] degrees
@@ -55,53 +58,51 @@ A real-time flight controller for STM32F4-based drones, built using FreeRTOS and
 
 ### Cascaded Adaptive P-PID (Roll & Pitch)
 
-- **Outer loop (angle)**
-  - Controller: P
-  - Frequency: 100 Hz
-  - Output limit: [-π, π] rad/s
+**Outer Loop (Angle)**
+- Controller: P
+- Frequency: 100 Hz
+- Output limit: [-π, π] rad/s
 
-- **Inner loop (rate)**
-  - Controller: PID
-  - Frequency: 500 Hz
-  - Output limit: [-150, 150] PWM ticks
+**Inner Loop (Rate)**
+- Controller: PID
+- Frequency: 500 Hz
+- Output limit: [-150, 150] PWM ticks
 
 ### Yaw PI Controller
 
-- **Rate only**
-  - Controller: PI
-  - Frequency: 500 Hz
-  - Output limit: [-100, 100] PWM ticks
+- Controller: PI
+- Frequency: 500 Hz
+- Output limit: [-100, 100] PWM ticks
 
 ### Vertical Velocity
 
-- **Velocity loop**
-  - Controller: PI
-  - Frequency: 100 Hz
-  - Output limit: [0, 750] PWM ticks
+- Controller: PI
+- Frequency: 100 Hz
+- Output limit: [0, 750] PWM ticks
 
 ### ESC Calibration
 
-- **PWM min:** 1000 µs
-- **PWM max:** 2000 µs
+- PWM min: 1000 µs
+- PWM max: 2000 µs
 
 ### Low-Pass Filters
 
-- **PT1:** EMA (Exponential Moving Average)
-- **PT2:** Cascaded EMA
+- PT1: EMA (Exponential Moving Average)
+- PT2: Cascaded EMA
 
 ---
 
-## Controller Block Diagrams
+## 📐 Controller Block Diagrams
 
 **Roll & Pitch Cascaded P-PID Controller**
-![alt text](images/Roll_Pitch_PID.jpg)
+<img src="images/Roll_Pitch_PID.jpg" alt="Roll Pitch Diagram" width="500">
 
 **Yaw PI Controller**
-![alt text](images/Yaw_PI.jpg)
+<img src="images/Yaw_PI.jpg" alt="Yaw Diagram" width="500">
 
 ---
 
-## Timing Configuration
+## ⏱️ Timing Configuration
 
 - **Sensor read:** 1 kHz
 - **Attitude PID + Madgwick:** 500 Hz
@@ -111,7 +112,7 @@ A real-time flight controller for STM32F4-based drones, built using FreeRTOS and
 
 ---
 
-## Communication
+## 📡 Communication
 
 - **Max payload:** 32 bytes per transmission
 - **Direction:** Bidirectional (2-way)
@@ -119,15 +120,24 @@ A real-time flight controller for STM32F4-based drones, built using FreeRTOS and
 
 ---
 
+## 📁 Repository Structure
 
----
+/
+├── .vscode/ # VS Code workspace settings
+├── images/ # README images (drone, PCB, diagrams)
+├── include/ # Header files (.h)
+├── lib/ # Custom libraries (sensor drivers, control, etc.)
+├── src/ # main.cpp and core application code
+├── test/ # Unit tests (default, not used)
+├── .gitignore
+├── README.md
+└── platformio.ini # PlatformIO build configuration
 
 ## Connect
 
 - **Email:** ivantuanadatu204@gmail.com
 - **LinkedIn:** [linkedin.com/in/ayob-ii-tuanadatu](www.linkedin.com/in/ayob-ii-tuanadatu)
 
----
+## 📄 License
 
-## License
 MIT
