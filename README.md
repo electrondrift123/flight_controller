@@ -1,7 +1,10 @@
-# STM32 Drone Flight Controller (WIP)  
-A real-time, flight controller for STM32F4-based drones, built using FreeRTOS and custom drivers.
+# STM32 Drone Flight Controller
 
-**450f Quadrotor**
+**Status: Flight-Validated on 450mm Quadrotor**
+
+A real-time flight controller for STM32F4-based drones, built using FreeRTOS and custom drivers.
+
+**450mm Quadrotor**
 ![alt text](Drone.jpg)
 
 **KiCAD Flight Controller**
@@ -9,80 +12,122 @@ A real-time, flight controller for STM32F4-based drones, built using FreeRTOS an
 ![alt text](FC_black_pcb.jpg)
 ![alt text](FC_real.jpg)
 
-V2.0
+**V2.0 - 4-Layer Design**
 ![alt text](FC_PCB_v2.jpg)
 
 ---
 
 ## Features  
+
 - Modular FreeRTOS-based architecture
 - ATTi (Attitude) Mode
 - Madgwick Sensor Fusion (9DoF) for Attitude Estimation
 - Vertical Velocity 3-State Kalman Filter Estimation 
 - Vertical Velocity PI Controller  
 - Radio: nRF24L01 
-- Watchdog-protected system with failsafe reboot  (SENSOR GLITCH)
+- Watchdog-protected system with failsafe reboot (SENSOR GLITCH)
 - Clean, low-latency motor PWM generation via timers  
 - Custom lightweight libraries 
 
 ---
 
 ## Hardware  
-- **STM32F411CEU** (MCU)  
-- **MPU6050** (IMU)  
-- **QMC5883P** (Magnetometer: Optional)  
-- **BMP280** (Barometer)  
-- **nRF24L01+ PA/LNA** modules  
-- **930KV Brushless motors + 30A ESCs**  
-- **1.2A 3.3V DC-DC Buck** 
+
+- **MCU:** STM32F411CEU
+- **IMU:** MPU6050
+- **Magnetometer:** QMC5883P (Optional)
+- **Barometer:** BMP280
+- **Radio:** nRF24L01+ PA/LNA
+- **Motors:** 930KV Brushless
+- **ESCs:** 30A
+- **DC-DC Buck:** 1.2A @ 3.3V
+
 ---
 
-## ⚙️ Getting Started  
+## Control Architecture
 
-> Requirements:  
-> PlatformIO / VS Code, ST-Link, basic STM32 toolchain
+### Control Input Limits
 
-Human input from the controller is Angle in Degrees. Then the flight code will convert it into radians for computations.
+- **Roll:** [-20, 20] degrees
+- **Pitch:** [-20, 20] degrees
+- **Yaw rate:** [-360, 360] deg/sec
+- **Vertical velocity:** [-0.8, 1.0] m/s
 
-Adaptive P-PID per axis: 
-P outer loop: angle error (100 Hz)
-PID inner loop: angular rates error (500Hz)
-1:5 ratio
+### Cascaded Adaptive P-PID (Roll & Pitch)
 
-# Control Input
-- Roll and Pitch inputs are angle [-20,20] deg for safety.
-- Yaw will be angular rate max cmd: [-360,360] deg/sec.
-- Vertical velocity: [-0.8,1.0] m/s
-- Internal calculation uses radians.
+- **Outer loop (angle)**
+  - Controller: P
+  - Frequency: 100 Hz
+  - Output limit: [-π, π] rad/s
 
-# Control Scheme
-- Cascaded adaptive P-PID architecture.
-- Outer loop, P-controller, angle position, running on 50 Hz,
-  and output (desired angular rate) is clamped by [-pi,pi].
-- Inner loop, PID-controller, angular rate, running on 250 Hz,
-  and output is directly clamped to pwm ticks for the mixer
-  by their authority: [-150,150] for roll & pitch, [-100,100] for yaw.
-- Throttle is clamped: [0,750]. 
+- **Inner loop (rate)**
+  - Controller: PID
+  - Frequency: 500 Hz
+  - Output limit: [-150, 150] PWM ticks
 
-# Communication data transforms
-- max of 32 kB transmission
-- 2 way communication 
-  
-# ESC calibration:[1000,2000] us pwm ticks
+### Yaw PI Controller
 
-# LPFs
-- PT1 & PT2 using EMA or Cascaded EMA
+- **Rate only**
+  - Controller: PI
+  - Frequency: 500 Hz
+  - Output limit: [-100, 100] PWM ticks
 
-# Controller Block Diagram (Attitude):
+### Vertical Velocity
+
+- **Velocity loop**
+  - Controller: PI
+  - Frequency: 100 Hz
+  - Output limit: [0, 750] PWM ticks
+
+### ESC Calibration
+
+- **PWM min:** 1000 µs
+- **PWM max:** 2000 µs
+
+### Low-Pass Filters
+
+- **PT1:** EMA (Exponential Moving Average)
+- **PT2:** Cascaded EMA
+
+---
+
+## Controller Block Diagrams
+
 **Roll & Pitch Cascaded P-PID Controller**
 ![alt text](Roll_Pitch_PID.jpg)
 
 **Yaw PI Controller**
 ![alt text](Yaw_PI.jpg)
 
-# Timing
-- read sensor:              1 kHz
-- Attiude PID & Madgwick:   500 Hz
-- Vertical Velocity PI:     100 Hz
-- Radio:                    interrupt driven
-- WDT:                      1 Hz
+---
+
+## Timing Configuration
+
+- **Sensor read:** 1 kHz
+- **Attitude PID + Madgwick:** 500 Hz
+- **Vertical Velocity PI:** 100 Hz
+- **Radio:** Interrupt-driven
+- **Watchdog:** 1 Hz
+
+---
+
+## Communication
+
+- **Max payload:** 32 bytes per transmission
+- **Direction:** Bidirectional (2-way)
+- **Protocol:** nRF24L01
+
+---
+
+
+---
+
+## Connect
+
+- **Email:** ivantuanadatu204@gmail.com
+- **LinkedIn:** [linkedin.com/in/ayob-ii-tuanadatu](www.linkedin.com/in/ayob-ii-tuanadatu)
+
+---
+
+## License
+MIT
