@@ -5,15 +5,15 @@
 A real-time flight controller for STM32F4-based drones, built using FreeRTOS and custom drivers.
 
 **450mm Quadrotor**
-![alt text](Drone.jpg)
+![alt text](images/Drone.jpg)
 
 **KiCAD Flight Controller**
-![alt text](FC_3d_render.jpg)
-![alt text](FC_black_pcb.jpg)
-![alt text](FC_real.jpg)
+![alt text](images/FC_3d_render.jpg)
+![alt text](images/FC_black_pcb.jpg)
+![alt text](images/FC_real.jpg)
 
 **V2.0 - 4-Layer Design**
-![alt text](FC_PCB_v2.jpg)
+![alt text](images/FC_PCB_v2.jpg)
 
 ---
 
@@ -94,10 +94,10 @@ A real-time flight controller for STM32F4-based drones, built using FreeRTOS and
 ## Controller Block Diagrams
 
 **Roll & Pitch Cascaded P-PID Controller**
-![alt text](Roll_Pitch_PID.jpg)
+![alt text](images/Roll_Pitch_PID.jpg)
 
 **Yaw PI Controller**
-![alt text](Yaw_PI.jpg)
+![alt text](images/Yaw_PI.jpg)
 
 ---
 
