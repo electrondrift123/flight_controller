@@ -70,10 +70,14 @@ A real-time flight controller for STM32F4-based drones built with FreeRTOS and c
 - Frequency: 100 Hz
 - Output limit: [-π, π] rad/s
 
+<img src="images/Roll_Pitch_PID.jpg" alt="Roll & Pitch Controller Block Diagram">
+
 **Inner Loop (Rate)**
 - Controller: PID
 - Frequency: 500 Hz
 - Output limit: [-150, 150] PWM ticks
+
+<img src="images/Yaw_PI.jpg" alt="Yaw PI Controller Block Diagram">
 
 ### Yaw PI Controller
 
@@ -96,16 +100,6 @@ A real-time flight controller for STM32F4-based drones built with FreeRTOS and c
 
 - PT1: EMA (Exponential Moving Average)
 - PT2: Cascaded EMA
-
----
-
-## 📐 Controller Block Diagrams
-
-**Roll & Pitch Cascaded P-PID Controller**
-<img src="images/Roll_Pitch_PID.jpg" alt="Roll Pitch Diagram" width="500">
-
-**Yaw PI Controller**
-<img src="images/Yaw_PI.jpg" alt="Yaw Diagram" width="500">
 
 ---
 
