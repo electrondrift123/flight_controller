@@ -17,7 +17,7 @@ A real-time flight controller for STM32F4-based drones built with FreeRTOS and c
 
 **V2.0 - 4-Layer Design**
 
-![FC PCB v2](images\FC_PCB_v2.jpg)
+<img src="images/FC_PCB_v2.jpg" alt="FC PCB v2 (KiCAD)">
 
 ---
 
