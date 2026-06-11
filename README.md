@@ -1,15 +1,26 @@
 # STM32 Drone Flight Controller (WIP)  
 A real-time, flight controller for STM32F4-based drones, built using FreeRTOS and custom drivers.
 
+**450f Quadrotor**
+![alt text](Drone.jpg)
+
+**KiCAD Flight Controller**
+![alt text](FC_3d_render.jpg)
+![alt text](FC_black_pcb.jpg)
+![alt text](FC_real.jpg)
+
+V2.0
+![alt text](FC_PCB_v2.jpg)
+
 ---
 
 ## Features  
-- Modular FreeRTOS-based architecture (manual + autonomous modes)
-- Angle Mode
-- Madgwick sensor fusion for stable orientation  
-- PID control for roll, pitch, yaw, and throttle  
-- Altitude hold via barometer  
-- Radio: nRF24L01 (override)
+- Modular FreeRTOS-based architecture
+- ATTi (Attitude) Mode
+- Madgwick Sensor Fusion (9DoF) for Attitude Estimation
+- Vertical Velocity 3-State Kalman Filter Estimation 
+- Vertical Velocity PI Controller  
+- Radio: nRF24L01 
 - Watchdog-protected system with failsafe reboot  (SENSOR GLITCH)
 - Clean, low-latency motor PWM generation via timers  
 - Custom lightweight libraries 
@@ -17,14 +28,13 @@ A real-time, flight controller for STM32F4-based drones, built using FreeRTOS an
 ---
 
 ## Hardware  
-- **STM32F411 Blackpill**  
+- **STM32F411CEU** (MCU)  
 - **MPU6050** (IMU)  
 - **QMC5883P** (Magnetometer: Optional)  
 - **BMP280** (Barometer)  
-- GPS (optional)  
 - **nRF24L01+ PA/LNA** modules  
-- **Brushless motors + ESCs**  
-
+- **930KV Brushless motors + 30A ESCs**  
+- **1.2A 3.3V DC-DC Buck** 
 ---
 
 ## ⚙️ Getting Started  
@@ -32,15 +42,12 @@ A real-time, flight controller for STM32F4-based drones, built using FreeRTOS an
 > Requirements:  
 > PlatformIO / VS Code, ST-Link, basic STM32 toolchain
 
-
-
 Human input from the controller is Angle in Degrees. Then the flight code will convert it into radians for computations.
 
 Adaptive P-PID per axis: 
 P outer loop: angle error (100 Hz)
 PID inner loop: angular rates error (500Hz)
 1:5 ratio
-
 
 # Control Input
 - Roll and Pitch inputs are angle [-20,20] deg for safety.
@@ -54,31 +61,28 @@ PID inner loop: angular rates error (500Hz)
   and output (desired angular rate) is clamped by [-pi,pi].
 - Inner loop, PID-controller, angular rate, running on 250 Hz,
   and output is directly clamped to pwm ticks for the mixer
-  by their authority: [-150,150].
-- Throttle is clamped: [0,1000]. 
+  by their authority: [-150,150] for roll & pitch, [-100,100] for yaw.
+- Throttle is clamped: [0,750]. 
 
 # Communication data transforms
-- From RX (int16_t: +- 300.00f): 
-  Roll & Pitch, and Yaw rate cmd max limit: +- 30.00f, +- 180.00f;
-  Scaled to 100 before sending to convert (float -> int16_t);
-- TX:
-  Scaled the Attitude command by 1/100: (int16_t -> float)
+- max of 32 kB transmission
+- 2 way communication 
   
 # ESC calibration:[1000,2000] us pwm ticks
 
 # LPFs
-- command filter:             alpha = 0.8f
-- altitude (BMP sensor):      alpha = 0.8f (inv config) 
-- altitutude complementary:   alpha = 0.9f (inv)
-- Madgwick, MPU6050, QMC:     No LPF
+- PT1 & PT2 using EMA or Cascaded EMA
 
+# Controller Block Diagram (Attitude):
+**Roll & Pitch Cascaded P-PID Controller**
+![alt text](Roll_Pitch_PID.jpg)
 
-# Controller Block Diagram (one block, not cascaded or the full architecture):
-![alt text](image.png)
-
+**Yaw PI Controller**
+![alt text](Yaw_PI.jpg)
 
 # Timing
-- read sensor:    1 kHz
-- PID & Madgwick: 500 Hz
-- Radio:          interrupt driven
-- WDT:            1 Hz
+- read sensor:              1 kHz
+- Attiude PID & Madgwick:   500 Hz
+- Vertical Velocity PI:     100 Hz
+- Radio:                    interrupt driven
+- WDT:                      1 Hz

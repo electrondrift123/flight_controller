@@ -195,6 +195,10 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
   emaInit(&ayLPF, 1.0f, 3.0f, 1000.0f); // 15 Hz cutoff
   emaInit(&azLPF, 1.0f, 3.0f, 1000.0f); // 15 Hz cutoff
 
+  emaInit(&wxLPF, 1.0f, 100.0f, 1000.0f); // 100 Hz cutoff
+  emaInit(&wyLPF, 1.0f, 100.0f, 1000.0f); // 100 Hz cutoff
+  emaInit(&wzLPF, 1.0f, 100.0f, 1000.0f); // 100 Hz cutoff
+
   emaInit(&raw_alt_LPF, 1.0f, 5.0f, 1000.0f); //was: PT1, fc = 1 Hz, fs = 1 kHz for raw altitude measurement smoothing
   emaInit(&vzLPF, 1.0f, 5.0f, 200.0f);
 
@@ -244,10 +248,16 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
         emaUpdate(&axLPF, ax);
         emaUpdate(&ayLPF, ay);
         emaUpdate(&azLPF, az);
+        emaUpdate(&wxLPF, wx);
+        emaUpdate(&wyLPF, wy);
+        emaUpdate(&wzLPF, wz);
 
         ax = axLPF.output; // Get filtered X
         ay = ayLPF.output; // Get filtered Y
         az = azLPF.output; // Get filtered Z
+        wx = wxLPF.output; // Get filtered X
+        wy = wyLPF.output; // Get filtered Y
+        wz = wzLPF.output; // Get filtered Z
 
         local_altitude = bmpData.altitude; // Store altitude locally
        
@@ -294,7 +304,7 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       }
       az_true_f = (az_true_f - 1.0f) * 9.81f; 
 
-      az_true_f = constrainFloat(az_true_f, -15.0f, 15.0f); // Constrain to reasonable range for a drone (tune as needed)
+      az_true_f = constrainFloat(az_true_f, -20.0f, 20.0f); // Constrain to reasonable range for a drone (tune as needed)
 
       // fusedAlt = kalmanAltitudeUpdate(&kalmanState, local_altitude, az_world_filtered, dt * kalman_interval); // Kalman filter update for altitude estimation
       kalman_update(&kalmanState, local_altitude, az_true_f, dt * kalman_interval); // Kalman filter update for altitude estimation
@@ -333,9 +343,9 @@ void readSensorsTask(void* Parameters) {  // 1 kHz
       // Serial.print(madData.pitch); Serial.print(", ");
       // Serial.println(madData.yaw);
 
-      Serial.print("Vz: "); Serial.print(velocity_z); Serial.print(", ");
-      Serial.print("alt: "); Serial.print(fusedAlt); Serial.print(", bias: ");
-      Serial.println(accel_bias); 
+      // Serial.print("Vz: "); Serial.print(velocity_z); Serial.print(", ");
+      // Serial.print("alt: "); Serial.print(fusedAlt); Serial.print(", bias: ");
+      // Serial.println(accel_bias); 
 
       // Serial.print("az true f: "); Serial.println(az_true_f);
 
@@ -358,10 +368,10 @@ void PIDtask(void* Parameters) {
 
   // ====================== CONFIG ======================
   const float BASE_THROTTLE = 1000.0f;      // Fixed base in mixer
-  const float MAX_TB        = 550.0f;       // Maximum hover component for takeoff only (was 53% too low, 58% too high), [54, 55]
+  const float MAX_TB        = 560.0f;       // Maximum hover component for takeoff only (was 53% too low, 58% too high), [54, 55]
   const float HOVER_TB      = 545.0f;       // Starting guess - tune this later
 
-  const float KP_VZ = 145.0f; // was 140: [140, 180], 130 was too low
+  const float KP_VZ = 143.0f; // was 140: [140, 180], 130 was too low
   const float KI_VZ = 0.5f; // was 0.5 good, [0.5, 2]
   const float VZ_OUTPUT_LIMIT = 200.0f; // already good
 
@@ -481,7 +491,7 @@ void PIDtask(void* Parameters) {
       // Pilot E_LAND switch OR low battery triggers emergency descent
       // But KILL_MOTORS overrides everything
       if (!KILL_MOTORS) {
-        if (pilot_E_LAND || (Vb < 10.8f)) E_LAND = true;
+        if (pilot_E_LAND || (Vb < 10.9f)) E_LAND = true;
         else E_LAND = false;
       }
       
@@ -587,15 +597,16 @@ void PIDtask(void* Parameters) {
         }
 
         // gain sched for voltage sag
+        float Vb_gain = 50.0f;
         float drop = 12.6f - Vb; // how much voltage has dropped from ideal
-        float Vb_hover_gain = 50.0f + 30.0f * drop * drop; // quadratic gain increase as voltage drops, tune these values
-        if (Vb_hover_gain > 100.0f) Vb_hover_gain = 100.0f; // cap the gain to prevent excessive compensation
-        float voltage_sag_com = Vb_hover_gain * drop;
-        if (voltage_sag_com > 100.0f) voltage_sag_com = 100.0f;
+        if (Vb < 12.0f && Vb > 11.4f) Vb_gain = 60.0f;
+        else if (Vb < 11.4f) Vb_gain = 70.0f;
+
+        float voltage_sag_com = Vb_gain * drop; // remove this in the future
 
         // voltage sag LPF
-        emaUpdate(&Vb_sag_comp_LPF, voltage_sag_com);
-        voltage_sag_com = Vb_sag_comp_LPF.output;
+        // emaUpdate(&Vb_sag_comp_LPF, voltage_sag_com);
+        // voltage_sag_com = Vb_sag_comp_LPF.output;
 
         tb = HOVER_TB + voltage_sag_com - ge_comp; // voltage sag compensation     
 
@@ -663,15 +674,15 @@ void PIDtask(void* Parameters) {
       motor_cmd[2] = total_throttle + R_mix - P_mix + Y_mix;
       motor_cmd[3] = total_throttle - R_mix - P_mix - Y_mix;
 
-      emaUpdate(&M1_LPF, motor_cmd[0]);
-      emaUpdate(&M2_LPF, motor_cmd[1]);
-      emaUpdate(&M3_LPF, motor_cmd[2]);
-      emaUpdate(&M4_LPF, motor_cmd[3]);
+      // emaUpdate(&M1_LPF, motor_cmd[0]);
+      // emaUpdate(&M2_LPF, motor_cmd[1]);
+      // emaUpdate(&M3_LPF, motor_cmd[2]);
+      // emaUpdate(&M4_LPF, motor_cmd[3]);
 
-      motor_cmd[0] = M1_LPF.output;
-      motor_cmd[1] = M2_LPF.output;
-      motor_cmd[2] = M3_LPF.output;
-      motor_cmd[3] = M4_LPF.output;
+      // motor_cmd[0] = M1_LPF.output;
+      // motor_cmd[1] = M2_LPF.output;
+      // motor_cmd[2] = M3_LPF.output;
+      // motor_cmd[3] = M4_LPF.output;
     }
 
     for (int i = 0; i < 4; i++) {

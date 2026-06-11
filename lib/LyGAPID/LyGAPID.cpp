@@ -27,7 +27,7 @@ void initLyGAPID(LyGAPIDControllerData_t* lygapid, float Kp, float Ki, float Kd,
 
     lygapid->landed = 1.0f; // 1 = true, 0 = false
 
-    emaInit(&lygapid->pidLPF, 2.0f, 30.0f, 500.0f); // 20–40 Hz; recommended
+    emaInit(&lygapid->pidLPF, 2.0f, 50.0f, 500.0f); // 20–40 Hz; recommended (was 30 Hz)
 }
 
 // for PITCH and ROLL positions
@@ -130,10 +130,11 @@ float computeLyGAPID_in(LyGAPIDControllerData_t* lygapid, float setpoint, float 
         if (lygapid->Kd > KD_MAX) lygapid->Kd = KD_MAX; // clamp
         else if (lygapid->Kd < KD_MIN) lygapid->Kd = KD_MIN;
     }
-    else if (lygapid->mode == 1.0f){
-        lygapid->Kp = 50.0f; // fixed high Kp for output control
-        lygapid->Ki = 1.5f; // was 15.0f // fixed high Kp for output control
-        lygapid->Kd = 0.005f; // fixed high Kp for output control
+    else if (lygapid->mode == 1.0f){ // @ static PID
+        // comment: no vibrations but have steady state error in position @ 3; 25, 10, 0.03, I @ +- 60 pwm
+        lygapid->Kp = 30.0f; // was 25.0f
+        lygapid->Ki = 15.0f; // was 10.0f 
+        lygapid->Kd = 0.03f; // can do 0.03 without motor heating, was 0.005f, next: [0.015, 0.03, 0.04]
     }
 
     return u;
@@ -190,8 +191,8 @@ float computeLyGAPID_yaw(LyGAPIDControllerData_t* lygapid, float setpoint, float
         else if (lygapid->Ki < KI_MIN) lygapid->Ki = KI_MIN;
     }
     else if (lygapid->mode == 1.0f){
-        lygapid->Kp = KP_MIN * 1.0f; // fixed low Kp for yaw control (was 0.8f)
-        lygapid->Ki = 1.0f; // fixed low Ki for yaw control (was 10)
+        lygapid->Kp = 25.0f; // fixed low Kp for yaw control (was 0.8f)
+        lygapid->Ki = 15.0f; // fixed low Ki for yaw control (was 10)
     }
 
     return u;

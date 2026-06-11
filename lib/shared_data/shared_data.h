@@ -85,6 +85,7 @@ extern LyGAPIDControllerData_t pidYawRate;
 // extern Butterworth2ndLPF_t gyroLPF;  // Gyroscope LPF
 // extern Butterworth2ndLPF_t pidLPF;  // Gyroscope LPF
 extern EMA_t axLPF, ayLPF, azLPF; // Accelerometer LPF
+extern EMA_t wxLPF, wyLPF, wzLPF;
 // extern EMA_t pidLPF; // EMA for PID output
 
 // altitude hold (z-axis velocity control)
