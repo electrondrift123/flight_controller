@@ -11,12 +11,12 @@ A real-time flight controller for STM32F4-based drones built with FreeRTOS and c
 | | |
 |---|---|
 | **450mm Quadrotor** | **Flight Controller (KiCad)** |
-| <img src="images/Drone.jpg" alt="Drone" width="400"> | <img src="images/FC_3d_render.jpg" alt="FC Render" width="400"> |
+| <img src="images/Drone.jpg" alt="450f Quadrotor" width="400"> | <img src="images/FC_3d_render.jpg" alt="FC PCB KiCAD 3D Render" width="400"> |
 | **PCB - Black** | **PCB - Real** |
-| <img src="images/FC_black_pcb.jpg" alt="FC Black" width="400"> | <img src="images/FC_real.jpg" alt="FC Real" width="400"> |
+| <img src="images/FC_black_pcb.jpg" alt="FC PCB (black)" width="400"> | <img src="images/FC_real.jpg" alt="FC Bare PCB (Real)" width="400"> |
 
 **V2.0 - 4-Layer Design**
-<img src="images/FC_PCB_v2.jpg" alt="FC V2" width="400">
+![alt text](images\FC_PCB_v2.jpg)
 
 ---
 
@@ -31,6 +31,12 @@ A real-time flight controller for STM32F4-based drones built with FreeRTOS and c
 - 🛡️ Watchdog-protected system with failsafe reboot
 - 🎮 Clean, low-latency motor PWM generation
 - 📦 Custom lightweight libraries
+
+---
+
+## System Flowchart
+
+<img src="images\system_flowchart.jpg" alt="System Flowchart" width="400">
 
 ---
 
